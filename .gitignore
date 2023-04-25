@@ -1,0 +1,7 @@
+*.pro
+*.pro.*
+*.exe
+*.pdb
+*.obj
+jpeg
+

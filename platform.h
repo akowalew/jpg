@@ -21,6 +21,8 @@ typedef int8_t i8;
 
 #define ByteSwap16(x) ((((x) & 0xFF00) >> 8) | (((x) & 0x00FF) << 8))
 
+#define Assert(x) if(!(x)) { fprintf(stderr, "Fatal error at: %s[%d]: expression \"%s\" failed\n", __FILE__, __LINE__, #x); *(int*)(0) = 0; }
+
 typedef struct
 {
     u32 Width;
