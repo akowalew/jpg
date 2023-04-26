@@ -5,6 +5,8 @@
 
 typedef size_t usz;
 
+typedef float f32;
+
 typedef int64_t i64;
 typedef uint64_t u64;
 
@@ -21,13 +23,19 @@ typedef int8_t i8;
 
 #define ByteSwap16(x) ((((x) & 0xFF00) >> 8) | (((x) & 0x00FF) << 8))
 
-#define Assert(x) if(!(x)) { fprintf(stderr, "Fatal error at: %s[%d]: expression \"%s\" failed\n", __FILE__, __LINE__, #x); *(int*)(0) = 0; }
+// static void AssertFailed()
+// {
+//     fprintf(stderr, "Fatal error at: %s[%d]: expression \"%s\" failed\n", __FILE__, __LINE__, #x); if(!IsDebuggerPresent()) { exit(1); } else { *(int*)(0) = 0; }
+// }
+
+#define Assert(x) if(!(x)) { *(int*)(0) = 0; }
 
 typedef struct
 {
     u32 Width;
     u32 Height;
     u32 Pitch;
+    u32 Size;
     u8* At;
 } bitmap;
 
@@ -53,3 +61,5 @@ static void* PopBytes(buffer* Buffer, usz Count)
 }
 
 #define PopU16(Buffer) (u16*)PopBytes(Buffer, sizeof(u16))
+
+static void* PlatformAlloc(usz Size);

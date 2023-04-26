@@ -121,117 +121,377 @@ typedef struct
 {
     u8* At;
     usz Elapsed;
-    u32 Bits;
-    u8 Pos;
+    u32 Buf;
+    u8 Len;
+    u8 LastByte;
 } bit_stream;
 
 static int Refill(bit_stream* BitStream)
 {
+    u8 BytesCount = (32 - BitStream->Len) / 8;
+    if(BitStream->Elapsed < BytesCount)
+    {
+        return 0;
+    }
+
+    printf("Refill: ");
+    for(u8 ByteIdx = 0;
+        ByteIdx < BytesCount;
+        ByteIdx++)
+    {
+        u8 Byte = BitStream->At[ByteIdx];
+        printf("0x%02X, ", Byte);
+
+        u8 LastByte = BitStream->LastByte;
+        BitStream->LastByte = Byte;
+        if(LastByte == 0xFF &&
+           Byte == 0x00)
+        {
+            printf("Byte stuffing detected!\n");
+            BytesCount++;
+            if(BitStream->Elapsed < BytesCount)
+            {
+                return 0;
+            }
+
+            continue;
+        }
+
+        BitStream->Buf |= (Byte << BitStream->Len);
+        BitStream->Len += 8;
+    }
+    putchar('\n');
+
+    BitStream->At += BytesCount;
+    BitStream->Elapsed -= BytesCount;;
+
+    printf("BitStream: ");
+    for(int Idx = BitStream->Len-1;
+        Idx >= 0;
+        Idx--)
+    {
+        putchar((BitStream->Buf & (1 << Idx)) ? '1' : '0');
+    }
+    printf("\n");
+    fflush(stdout);
+    return 1;
+}
+
+static int PopBits(bit_stream* BitStream, u8 Size, i16* Value)
+{
     int Result = 0;
 
-    u8 BytesCount = BitStream->Pos / 8;
+    Assert(Size <= sizeof(*Value)*8);
 
-    if(BitStream->Elapsed >= BytesCount)
+    if(Refill(BitStream))
     {
-        printf("Refilling: ");
-        for(usz ByteIdx = 0;
-            ByteIdx < BytesCount;
-            ByteIdx++)
+        printf("PopBits(%d): ", Size);
+        for(int I = Size-1;
+            I >= 0;
+            I--)
         {
-            u32 Byte = BitStream->At[ByteIdx];
-            printf("0x%02X, ", Byte);
-
-            BitStream->Bits >>= 8;
-            BitStream->Bits |= (Byte << 24);
+            putchar((BitStream->Buf & (1 << I)) ? '1' : '0');
         }
         putchar('\n');
 
-        BitStream->Pos -= BytesCount * 8;
-        BitStream->Elapsed -= BytesCount;
-        BitStream->At += BytesCount;
-
-        printf("BitStream: ");
-        for(int Idx = 31;
-            Idx >= BitStream->Pos;
-            Idx--)
+        u16 Mask = (1 << Size) - 1;
+        u16 Raw = (BitStream->Buf & Mask);
+        u16 Thresh = (1 << (Size - 1));
+        if(Raw >= Thresh)
         {
-            putchar((BitStream->Bits & (1 << Idx)) ? '1' : '0');
+            *Value = Raw;
         }
-        putchar('\n');
+        else
+        {
+            *Value = Raw - (2 * Thresh - 1);
+        }
 
+        printf("Value: %d\n", *Value);
+        BitStream->Buf >>= Size;
+        BitStream->Len -= Size;
         Result = 1;
     }
 
     return Result;
 }
 
-static int DecodeValue(bit_stream* BitStream, jpeg_dht* HT, u8* Value)
+static int DecodeSymbol(bit_stream* BitStream, jpeg_dht* DHT, u8* Symbol)
 {
-    if(!Refill(BitStream))
+    int Result = 0;
+
+    if(Refill(BitStream))
+    {
+        u16 Code = 0;
+        u8* At = DHT->Values;
+        printf("DecodeSymbol:\n");
+        for(u8 I = 0; I < 16; I++)
+        {
+            u8 BitLen = I+1;
+            for(u8 J = 0; J < DHT->Counts[I]; J++)
+            {
+                for(int K = 0;
+                    K < BitLen;
+                    K++)
+                {
+                    putchar((Code & (1 << K)) ? '1' : '0');
+                }
+                printf(" -> %d\n", *At);
+
+                Assert(BitStream->Len >= I);
+
+                int Match;
+#if 0
+                u16 Mask = (1 << BitLen) - 1;
+                if((BitStream->Buf & Mask) == Code)
+                {
+                    Match = 1;
+                }
+                else
+                {
+                    Match = 0;
+                }
+#else
+                Match = 1;
+                u32 Mask = 0x1;
+                for(int K = BitLen-1;
+                    K >= 0;
+                    K--)
+                {
+                    int Left = (BitStream->Buf & Mask) != 0;
+                    int Right = (Code & (1 << K)) != 0;
+                    if(Left != Right)
+                    {
+                        Match = 0;
+                    }
+
+                    Mask <<= 1;
+                }
+#endif
+
+                if(Match)
+                {
+                    printf("MATCH!\n");
+                    BitStream->Buf >>= BitLen;
+                    BitStream->Len -= BitLen;
+                    *Symbol = *At;
+                    return 1;
+                }
+
+                Code++;
+                At++;
+            }
+
+            Code <<= 1;
+        }
+    }
+
+    return Result;
+}
+
+static const f32 DCT8x8Table[8][8] = 
+{
+    { +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f },
+    { +0.4904f, +0.4157f, +0.2778f, +0.0975f, -0.0975f, -0.2778f, -0.4157f, -0.4904f },
+    { +0.4619f, +0.1913f, -0.1913f, -0.4619f, -0.4619f, -0.1913f, +0.1913f, +0.4619f },
+    { +0.4157f, -0.0975f, -0.4904f, -0.2778f, +0.2778f, +0.4904f, +0.0975f, -0.4157f },
+    { +0.3536f, -0.3536f, -0.3536f, +0.3536f, +0.3536f, -0.3536f, -0.3536f, +0.3536f },
+    { +0.2778f, -0.4904f, +0.0975f, +0.4157f, -0.4157f, -0.0975f, +0.4904f, -0.2778f },
+    { +0.1913f, -0.4619f, +0.4619f, -0.1913f, -0.1913f, +0.4619f, -0.4619f, +0.1913f },
+    { +0.0975f, -0.2778f, +0.4157f, -0.4904f, +0.4904f, -0.4157f, +0.2778f, -0.0975f },
+};
+
+static const f32 tDCT8x8Table[8][8] = 
+{
+    { +0.3536f, +0.4904f, +0.4619f, +0.4157f, +0.3536f, +0.2778f, +0.1913f, +0.0975f },
+    { +0.3536f, +0.4157f, +0.1913f, -0.0975f, -0.3536f, -0.4904f, -0.4619f, -0.2778f },
+    { +0.3536f, +0.2778f, -0.1913f, -0.4904f, -0.3536f, +0.0975f, +0.4619f, +0.4157f },
+    { +0.3536f, +0.0975f, -0.4619f, -0.2778f, +0.3536f, +0.4157f, -0.1913f, -0.4904f },
+    { +0.3536f, -0.0975f, -0.4619f, +0.2778f, +0.3536f, -0.4157f, -0.1913f, +0.4904f },
+    { +0.3536f, -0.2778f, -0.1913f, +0.4904f, -0.3536f, -0.0975f, +0.4619f, -0.4157f },
+    { +0.3536f, -0.4157f, +0.1913f, +0.0975f, -0.3536f, +0.4904f, -0.4619f, +0.2778f },
+    { +0.3536f, -0.4904f, +0.4619f, -0.4157f, +0.3536f, -0.2778f, +0.1913f, -0.0975f },
+};
+
+static void AddScalar8x8(u8* C, i8 K)
+{
+    for(u8 Y = 0; Y < 8; Y++)
+    {
+        for(u8 X = 0; X < 8; X++)
+        {
+            C[Y*8+X] += K;
+
+            printf("%4d, ", C[Y*8+X]);
+        }
+
+        putchar('\n');
+    }
+}
+
+static void IDCT8x8(i16 C[8][8])
+{
+    // tT * R * T
+
+    f32 M[8][8];
+
+    for(u8 Y = 0; Y < 8; Y++)
+    {
+        for(u8 X = 0; X < 8; X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0; K < 8; K++)
+            {
+                S += tDCT8x8Table[Y][K] * C[K][X];
+            }
+
+            M[Y][X] = S;
+
+            printf("%10.4f, ", M[Y][X]);
+        }
+        putchar('\n');
+    }
+
+    putchar('\n');
+
+    for(u8 Y = 0; Y < 8; Y++)
+    {
+        for(u8 X = 0; X < 8; X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0; K < 8; K++)
+            {
+                S += M[Y][K] * DCT8x8Table[K][X];
+            }
+
+            C[Y][X] = (i8) S;
+
+            printf("%4d, ", C[Y][X]);
+        }
+
+        putchar('\n');
+    }
+}
+
+static inline u8 ClampU8(f32 F)
+{
+    if(F >= 255)
+    {
+        return 255;
+    }
+    else if(F < 0)
     {
         return 0;
     }
-
-    u8* At = HT->Values;
-
-    u16 Code = 0;
-    printf("Tree:\n");
-    for(u8 I = 0; I < 16; I++)
+    else
     {
-        u8 Count = HT->Counts[I];
-        u8 BitLen = I+1;
-        for(u8 J = 0; J < Count; J++)
+        return (u8)F;
+    }
+}
+
+static void DecodeMCU(bit_stream* BitStream, i16* C, jpeg_dht* HuffmanTables[2], i16* DC_Sum, u8 N)
+{
+    u8 DC_Size;
+    i16 DC_Coeff;
+    u8 AC_CountSize;
+    i16 AC_Coeff;
+
+    Assert(DecodeSymbol(BitStream, HuffmanTables[JPEG_DHT_CLASS_DC], &DC_Size));
+    if(!DC_Size)
+    {
+        return;
+    }
+    
+    Assert(PopBits(BitStream, DC_Size, &DC_Coeff));
+
+    *DC_Sum += DC_Coeff;
+
+    C[0] = *DC_Sum;
+
+    u8 Idx = 1;
+    while(Idx < N)
+    {
+        Assert(DecodeSymbol(BitStream, HuffmanTables[JPEG_DHT_CLASS_AC], &AC_CountSize));
+        if(AC_CountSize == 0)
         {
-#if 1
-            int Matches = 1;
-            u32 Mask = (1 << BitStream->Pos);
-            for(int K = BitLen-1;
-                K >= 0;
-                K--)
-            {
-                int Left = (BitStream->Bits & Mask) != 0;
-                int Right = (Code & (1 << K)) != 0;
-                if(Left != Right)
-                {
-                    Matches = 0;
-                }
-                putchar(Right ? '1' : '0');
-                Mask <<= 1;
-            }
-            printf(" -> %d\n", *At);
-#else
-            for(int K = BitLen-1;
-                K >= 0;
-                K--)
-            {
-                putchar((Code & (1 << K)) ? '1' : '0');
-            }
-            printf(" -> %d\n", *At);
-
-            int Matches = 0;
-            if(((BitStream->Bits >> BitStream->Pos) & ((1 << BitLen)-1)) == Code)
-            {
-                Matches = 1;
-            }
-#endif
-
-            if(Matches)
-            {
-                printf("Value: %d\n", *At);
-                BitStream->Pos += BitLen;
-                *Value = *At;
-                return 1;
-            }
-
-            At++;
-
-            Code++;
+            printf("EOB occured\n");
+            break;
+        }
+        else if(AC_CountSize == 0xF0)
+        {
+            Idx += 16;
+            Assert(Idx <= N);
+            continue;
         }
 
-        Code <<= 1;
+        u8 AC_Count = AC_CountSize >> 4;
+        u8 AC_Size = AC_CountSize & 0x0F;
+        printf("AC_Count: %d\n", AC_Count);
+        printf("AC_Size: %d\n", AC_Size);
+
+        Idx += AC_Count;
+        Assert(Idx <= N);
+        if(Idx < N)
+        {
+            Assert(PopBits(BitStream, AC_Size, &AC_Coeff));
+
+            C[Idx] = AC_Coeff;
+
+            Idx++;
+        }
     }
 
-    return 0;
+    printf("Quantized: ");
+    for(Idx = 0;
+        Idx < N;
+        Idx++)
+    {
+        printf("%d, ", C[Idx]);
+    }
+    putchar('\n');
+}
+
+static void ScalarMul8x8(i16 M[8][8], u8* C)
+{
+    for(u8 Y = 0; Y < 8; Y++)
+    {
+        for(u8 X = 0; X < 8; X++)
+        {
+            M[Y][X] *= C[Y*8+X];
+            printf("%4d, ", M[Y][X]);
+        }
+        putchar('\n');
+    }
+}
+
+static void DeZigZag8x8(i16 Src[64], i16 Dst[8][8])
+{
+    static const u8 DeZigZagTable[8][8] =
+    {
+        { 0,  1,  5,  6, 14, 15, 27, 28},
+        { 2,  4,  7, 13, 16, 26, 29, 42},
+        { 3,  8, 12, 17, 25, 30, 41, 43},
+        { 9, 11, 18, 24, 31, 40, 44, 53},
+        {10, 19, 23, 32, 39, 45, 52, 54},
+        {20, 22, 33, 38, 46, 51, 55, 60},
+        {21, 34, 37, 47, 50, 56, 59, 61},
+        {35, 36, 48, 49, 57, 58, 62, 63},
+    };
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            u8 Index = DeZigZagTable[Y][X];
+            Dst[Y][X] = Src[Index];
+            printf("%4d ", Dst[Y][X]);
+        }
+        putchar('\n');
+    }
 }
 
 #pragma pack(push, 1)

@@ -9,6 +9,11 @@
 #include "jpeg.h"
 #include "jpeg.c"
 
+static void* PlatformAlloc(usz Size)
+{
+    return VirtualAlloc(0, Size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+}
+
 static void* PlatformReadEntireFile(const char* Name, usz* Size)
 {
     void* Result = 0;

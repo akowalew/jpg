@@ -151,9 +151,9 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                     u8 BitLen = I+1;
                     for(u8 J = 0; J < DHT->Counts[I]; J++)
                     {
-                        for(int K = BitLen-1;
-                            K >= 0;
-                            K--)
+                        for(int K = 0;
+                            K < BitLen;
+                            K++)
                         {
                             putchar((Code & (1 << K)) ? '1' : '0');
                         }
@@ -190,17 +190,23 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 bit_stream BitStream;
                 BitStream.At = Buffer.At;
                 BitStream.Elapsed = Buffer.Elapsed;
-                BitStream.Bits = 0;
-                BitStream.Pos = 32;
+                BitStream.Buf = 0;
+                BitStream.Len = 0;
+                BitStream.LastByte = 0;
 
                 u16 NumBlocksX = (SOF0->ImageWidth + 7) / 8;
                 u16 NumBlocksY = (SOF0->ImageHeight + 7) / 8;
 
-                i8 DCcoefficients[3] = {0};
+                i16 DC_Y = 0;
+                i16 DC_Cb = 0;
+                i16 DC_Cr = 0;
 
-                i8 C[64] = {0};
-
-                u8 Value;
+                Bitmap->Width = SOF0->ImageWidth;
+                Bitmap->Height = SOF0->ImageHeight;
+                Bitmap->Pitch = ((Bitmap->Width + 3) / 4) * 4;
+                Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
+                Bitmap->At = PlatformAlloc(Bitmap->Size);
+                Assert(Bitmap->At);
 
                 for(u16 BlockY = 0;
                     BlockY < NumBlocksY;
@@ -210,82 +216,70 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                         BlockX < NumBlocksX;
                         BlockX++)
                     {
-                        u8 DCSize;
+                        i16 ZZ_Y[64] = {0};
+                        i16 ZZ_Cb[64] = {0};
+                        i16 ZZ_Cr[64] = {0};
 
-                        Assert(DecodeValue(&BitStream, HuffmanTables[0][0], &DCSize));
+                        DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0], &DC_Y, 64);
+                        DecodeMCU(&BitStream, ZZ_Cb, HuffmanTables[1], &DC_Cb, 64);
+                        DecodeMCU(&BitStream, ZZ_Cr, HuffmanTables[1], &DC_Cr, 64);
 
-                        // DCSize++;
+                        i16 C_Y[8][8];
+                        i16 C_Cb[8][8];
+                        i16 C_Cr[8][8];
 
-                        printf("Num bits for DC value: %d\n", DCSize);
+                        printf("Y:\n");
+                        DeZigZag8x8(ZZ_Y, C_Y);
+                        printf("Cb:\n");
+                        DeZigZag8x8(ZZ_Cb, C_Cb);
+                        printf("Cr:\n");
+                        DeZigZag8x8(ZZ_Cr, C_Cr);
 
-                        Assert(Refill(&BitStream));
+                        printf("Y:\n");
+                        ScalarMul8x8(C_Y, QuantizationTables[0]);
+                        printf("Cb:\n");
+                        ScalarMul8x8(C_Cr, QuantizationTables[1]);
+                        printf("Cr:\n");
+                        ScalarMul8x8(C_Cr, QuantizationTables[1]);
 
-                        u32 DCValue = (BitStream.Bits >> BitStream.Pos) & ((1 << DCSize) - 1);
+                        printf("Y:\n");
+                        IDCT8x8(C_Y);
+                        printf("Cb:\n");
+                        IDCT8x8(C_Cb);
+                        printf("Cr:\n");
+                        IDCT8x8(C_Cr);
 
-                        printf("DC value: %d\n", DCValue);
-
-                        BitStream.Pos += DCSize;
-
-                        DCcoefficients[0] += DCValue;
-
-                        C[0] = DCcoefficients[0] * QuantizationTables[0][0];
-
-                        int Count = 1;
-                        while(Count < 64)
+                        printf("RGB:\n");
+                        u8* Row = Bitmap->At + (BlockY*8)*Bitmap->Pitch + (BlockX*8)*4;
+                        for(u8 Y = 0; Y < 8; Y++)
                         {
-                            u8 S1;
+                            u8* Col = Row;
 
-                            Assert(DecodeValue(&BitStream, HuffmanTables[0][1], &S1));
-
-                            if(S1 == 0)
+                            for(u8 X = 0; X < 8; X++)
                             {
-                                printf("End of block marker!\n");
-                                break;
+                                f32 R = (C_Y[Y][X] + 1.4020F*C_Cr[Y][X] + 128);
+                                f32 G = (C_Y[Y][X] - 0.3441F*C_Cb[Y][X] - 0.71414F*C_Cr[Y][X] + 128);
+                                f32 B = (C_Y[Y][X] + 1.7720F*C_Cb[Y][X] + 128);
+
+                                Col[0] = ClampU8(R);
+                                Col[1] = ClampU8(G);
+                                Col[2] = ClampU8(B);
+
+                                Col += 3;
+
+                                printf("(%4d,%4d,%4d), ", (int)R, (int)G, (int)B);
+                                // printf("(%4d,%4d,%4d), ", RGB[Y][X][0], RGB[Y][X][1], RGB[Y][X][2]);
                             }
+                            putchar('\n');
 
-                            if(S1 > 15)
-                            {
-                                printf("Skipping %d zeros!\n", S1 >> 4);
-                                Count += S1 >> 4;
-                                S1 &= 0x0F;
-                            }
-
-                            if(Count < 64)
-                            {
-                                u8 ACsize = S1 + 1;
-
-                                printf("Num bits for AC value: %d\n", ACsize);
-
-                                Assert(Refill(&BitStream));
-
-                                u8 ACvalue = (BitStream.Bits >> BitStream.Pos) & ((1 << ACsize) - 1);
-
-                                BitStream.Pos += ACsize;
-
-                                printf("AC value: %d\n", ACvalue);
-
-                                C[Count] = ACvalue * QuantizationTables[0][Count];
-                                Count++;
-                            }
-                            else
-                            {
-                                printf("Reached end of MCU\n");
-                            }
+                            Row += Bitmap->Pitch;
                         }
 
-                        printf("After Quantization:\n");
-                        for(int I = 0; I < 64; I++)
-                        {
-                            printf("%d, ", C[I]);
-                        }
-                        putchar('\n');
-
-                        fflush(stdout);
-                        Assert(!"Not implemented");
+                        // Assert(!"Not implemented");
                     }
                 }
 
-                return 0;
+                Assert(!"Not implemented");
             } break;
         }
     }
