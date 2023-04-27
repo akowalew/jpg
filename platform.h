@@ -23,13 +23,6 @@ typedef int8_t i8;
 
 #define ByteSwap16(x) ((((x) & 0xFF00) >> 8) | (((x) & 0x00FF) << 8))
 
-// static void AssertFailed()
-// {
-//     fprintf(stderr, "Fatal error at: %s[%d]: expression \"%s\" failed\n", __FILE__, __LINE__, #x); if(!IsDebuggerPresent()) { exit(1); } else { *(int*)(0) = 0; }
-// }
-
-#define Assert(x) if(!(x)) { *(int*)(0) = 0; }
-
 typedef struct
 {
     u32 Width;
@@ -37,6 +30,10 @@ typedef struct
     u32 Pitch;
     u32 Size;
     u8* At;
+
+    // Byte orders:
+    //  u32 -> 0xAARRGGBB
+    //  u8[4] -> 0xBB, 0xGG, 0xRR, 0xAA
 } bitmap;
 
 typedef struct
@@ -63,3 +60,8 @@ static void* PopBytes(buffer* Buffer, usz Count)
 #define PopU16(Buffer) (u16*)PopBytes(Buffer, sizeof(u16))
 
 static void* PlatformAlloc(usz Size);
+static int PlatformShowBitmap(bitmap* Bitmap, const char* Title);
+
+static bitmap* GlobalBitmap;
+
+#define Assert(x) if(!(x)) { PlatformShowBitmap(GlobalBitmap, "bitmap"); *(int*)(0) = 0; }

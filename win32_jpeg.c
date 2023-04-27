@@ -45,8 +45,122 @@ static void* PlatformReadEntireFile(const char* Name, usz* Size)
     return Result;
 }
 
+static LRESULT
+MainWindowProc(HWND Window, UINT Msg, WPARAM WParam, LPARAM LParam)
+{
+    LRESULT Result = 0;
+
+    switch(Msg)
+    {
+        case WM_CLOSE:
+        {
+            // TODO: Message to user?
+            PostQuitMessage(0);
+        } break;
+
+        default:
+        {
+            Result = DefWindowProc(Window, Msg, WParam, LParam);
+        } break;
+    }
+
+    return Result;
+}
+
+static int PlatformShowBitmap(bitmap* Bitmap, const char* Title)
+{
+    WNDCLASSEXA WindowClass = {0};
+    WindowClass.cbSize = sizeof(WindowClass);
+    WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+    WindowClass.lpfnWndProc = MainWindowProc;
+    WindowClass.cbClsExtra = 0;
+    WindowClass.cbWndExtra = 0;
+    WindowClass.hInstance = GetModuleHandle(0);
+    WindowClass.hIcon = 0;
+    WindowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+    WindowClass.hbrBackground = 0;
+    WindowClass.lpszMenuName = 0;
+    WindowClass.lpszClassName = "ViewWindowClass";
+    WindowClass.hIconSm = 0;
+    Assert(RegisterClassEx(&WindowClass));
+
+    HWND Window = CreateWindowEx(0,
+                                 WindowClass.lpszClassName,
+                                 Title,
+                                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                                 CW_USEDEFAULT, CW_USEDEFAULT,
+                                 CW_USEDEFAULT, CW_USEDEFAULT,
+                                 0, 0, GetModuleHandle(0), 0);
+    Assert(Window);
+
+    HDC DeviceContext = GetDC(Window);
+    Assert(DeviceContext);
+
+    MSG Message;
+    while(GetMessage(&Message, 0, 0, 0))
+    {
+        TranslateMessage(&Message);
+        DispatchMessage(&Message);
+
+        BITMAPINFO BitmapInfo = {0};
+        BitmapInfo.bmiHeader.biSize = sizeof(BitmapInfo.bmiHeader);
+        BitmapInfo.bmiHeader.biWidth = Bitmap->Width;
+        BitmapInfo.bmiHeader.biHeight = -(int)(Bitmap->Height);
+        BitmapInfo.bmiHeader.biPlanes = 1;
+        BitmapInfo.bmiHeader.biBitCount = 32;
+        BitmapInfo.bmiHeader.biCompression = BI_RGB;
+        BitmapInfo.bmiHeader.biSizeImage = 0;
+        BitmapInfo.bmiHeader.biXPelsPerMeter = 0;
+        BitmapInfo.bmiHeader.biYPelsPerMeter = 0;
+        BitmapInfo.bmiHeader.biClrUsed = 0;
+        BitmapInfo.bmiHeader.biClrImportant = 0;
+
+        Assert(SetDIBitsToDevice(DeviceContext,
+                                 0, 0,
+                                 Bitmap->Width, Bitmap->Height,
+                                 0, 0,
+                                 0, Bitmap->Height,
+                                 Bitmap->At, &BitmapInfo, DIB_RGB_COLORS));
+    }
+
+    return (int) Message.wParam;
+}
+
+static void FillRectangle(bitmap* Bitmap, int X1, int Y1, int X2, int Y2, u32 Color)
+{
+    u8* Row = Bitmap->At + Y1*Bitmap->Pitch + X1*4;
+    for(int Y = Y1;
+        Y <= Y2;
+        Y++)
+    {
+        u8* Col = Row;
+        
+        for(int X = X1;
+            X <= X2;
+            X++)
+        {
+            *(u32*)(Col) = Color;
+
+            Col += 4;
+        }   
+
+        Row += Bitmap->Pitch;
+    }
+}
+
 int main(int Argc, char** Argv)
 {
+#if 0
+    bitmap Example;
+    Example.Width = 100;
+    Example.Height = 100;
+    Example.Pitch = Example.Width * 4;
+    Example.Size = Example.Pitch * Example.Height;
+    Example.At = PlatformAlloc(Example.Size);
+    FillRectangle(&Example, 0, 0, 31, 31, 0x000000FF);
+    PlatformShowBitmap(&Example, "example");
+#endif
+
     if(Argc < 2)
     {
         fprintf(stderr, "Syntax: %s <FileName>\n", Argv[0]);

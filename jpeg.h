@@ -123,7 +123,6 @@ typedef struct
     usz Elapsed;
     u32 Buf;
     u8 Len;
-    u8 LastByte;
 } bit_stream;
 
 static int Refill(bit_stream* BitStream)
@@ -142,21 +141,23 @@ static int Refill(bit_stream* BitStream)
         u8 Byte = BitStream->At[ByteIdx];
         printf("0x%02X, ", Byte);
 
-        u8 LastByte = BitStream->LastByte;
-        BitStream->LastByte = Byte;
-        if(LastByte == 0xFF &&
-           Byte == 0x00)
+        if(Byte == 0xFF)
         {
-            printf("Byte stuffing detected!\n");
-            BytesCount++;
-            if(BitStream->Elapsed < BytesCount)
+            Assert(BitStream->Elapsed >= (BytesCount+1));
+            u8 NextByte = BitStream->At[ByteIdx+1];
+            if(NextByte == 0x00)
             {
+                BitStream->At++;
+                BitStream->Elapsed--;
+            }
+            else
+            {
+                // Assert(!"Invalid sequence!!!");
                 return 0;
             }
-
-            continue;
         }
 
+        Assert(BitStream->Len+8<=32);
         BitStream->Buf |= (Byte << BitStream->Len);
         BitStream->Len += 8;
     }
@@ -180,6 +181,12 @@ static int Refill(bit_stream* BitStream)
 static int PopBits(bit_stream* BitStream, u8 Size, i16* Value)
 {
     int Result = 0;
+
+    if(Size == 0)
+    {
+        *Value = 0;
+        return 1;
+    }
 
     Assert(Size <= sizeof(*Value)*8);
 
@@ -206,6 +213,7 @@ static int PopBits(bit_stream* BitStream, u8 Size, i16* Value)
             *Value = Raw - (2 * Thresh - 1);
         }
 
+        Assert(BitStream->Len >= Size);
         printf("Value: %d\n", *Value);
         BitStream->Buf >>= Size;
         BitStream->Len -= Size;
@@ -219,7 +227,7 @@ static int DecodeSymbol(bit_stream* BitStream, jpeg_dht* DHT, u8* Symbol)
 {
     int Result = 0;
 
-    if(Refill(BitStream))
+    if(Refill(BitStream));
     {
         u16 Code = 0;
         u8* At = DHT->Values;
@@ -389,21 +397,14 @@ static inline u8 ClampU8(f32 F)
     }
 }
 
-static void DecodeMCU(bit_stream* BitStream, i16* C, jpeg_dht* HuffmanTables[2], i16* DC_Sum, u8 N)
+static void DecodeMCU(bit_stream* BitStream, i16* C, jpeg_dht* HT_DC, jpeg_dht* HT_AC, i16* DC_Sum, u8 N)
 {
     u8 DC_Size;
+    Assert(DecodeSymbol(BitStream, HT_DC, &DC_Size));
+
     i16 DC_Coeff;
-    u8 AC_CountSize;
-    i16 AC_Coeff;
-
-    Assert(DecodeSymbol(BitStream, HuffmanTables[JPEG_DHT_CLASS_DC], &DC_Size));
-    if(!DC_Size)
-    {
-        return;
-    }
-    
     Assert(PopBits(BitStream, DC_Size, &DC_Coeff));
-
+    
     *DC_Sum += DC_Coeff;
 
     C[0] = *DC_Sum;
@@ -411,11 +412,12 @@ static void DecodeMCU(bit_stream* BitStream, i16* C, jpeg_dht* HuffmanTables[2],
     u8 Idx = 1;
     while(Idx < N)
     {
-        Assert(DecodeSymbol(BitStream, HuffmanTables[JPEG_DHT_CLASS_AC], &AC_CountSize));
+        u8 AC_CountSize;
+        Assert(DecodeSymbol(BitStream, HT_AC, &AC_CountSize));
         if(AC_CountSize == 0)
         {
             printf("EOB occured\n");
-            break;
+            goto end;
         }
         else if(AC_CountSize == 0xF0)
         {
@@ -429,18 +431,28 @@ static void DecodeMCU(bit_stream* BitStream, i16* C, jpeg_dht* HuffmanTables[2],
         printf("AC_Count: %d\n", AC_Count);
         printf("AC_Size: %d\n", AC_Size);
 
+        i16 AC_Coeff;
+        Assert(PopBits(BitStream, AC_Size, &AC_Coeff));
+
         Idx += AC_Count;
         Assert(Idx <= N);
         if(Idx < N)
         {
-            Assert(PopBits(BitStream, AC_Size, &AC_Coeff));
-
             C[Idx] = AC_Coeff;
 
             Idx++;
         }
+        else
+        {
+            Assert(AC_Size == 0);
+        }
     }
 
+    // u8 AC_CountSize;
+    // Assert(DecodeSymbol(BitStream, HuffmanTables[JPEG_DHT_CLASS_AC], &AC_CountSize));
+    // Assert(AC_CountSize == 0);
+
+end:
     printf("Quantized: ");
     for(Idx = 0;
         Idx < N;

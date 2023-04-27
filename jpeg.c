@@ -192,7 +192,6 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 BitStream.Elapsed = Buffer.Elapsed;
                 BitStream.Buf = 0;
                 BitStream.Len = 0;
-                BitStream.LastByte = 0;
 
                 u16 NumBlocksX = (SOF0->ImageWidth + 7) / 8;
                 u16 NumBlocksY = (SOF0->ImageHeight + 7) / 8;
@@ -203,10 +202,11 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
 
                 Bitmap->Width = SOF0->ImageWidth;
                 Bitmap->Height = SOF0->ImageHeight;
-                Bitmap->Pitch = ((Bitmap->Width + 3) / 4) * 4;
+                Bitmap->Pitch = Bitmap->Width * 4;
                 Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
                 Bitmap->At = PlatformAlloc(Bitmap->Size);
                 Assert(Bitmap->At);
+                GlobalBitmap = Bitmap;
 
                 for(u16 BlockY = 0;
                     BlockY < NumBlocksY;
@@ -220,9 +220,12 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                         i16 ZZ_Cb[64] = {0};
                         i16 ZZ_Cr[64] = {0};
 
-                        DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0], &DC_Y, 64);
-                        DecodeMCU(&BitStream, ZZ_Cb, HuffmanTables[1], &DC_Cb, 64);
-                        DecodeMCU(&BitStream, ZZ_Cr, HuffmanTables[1], &DC_Cr, 64);
+                        DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0][0], HuffmanTables[0][1], &DC_Y, 64);
+                        // DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0], &DC_Y, 64);
+                        // DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0], &DC_Y, 64);
+                        // DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0], &DC_Y, 64);
+                        DecodeMCU(&BitStream, ZZ_Cb, HuffmanTables[1][0], HuffmanTables[1][1], &DC_Cb, 64);
+                        DecodeMCU(&BitStream, ZZ_Cr, HuffmanTables[1][0], HuffmanTables[1][1], &DC_Cr, 64);
 
                         i16 C_Y[8][8];
                         i16 C_Cb[8][8];
@@ -261,11 +264,12 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                                 f32 G = (C_Y[Y][X] - 0.3441F*C_Cb[Y][X] - 0.71414F*C_Cr[Y][X] + 128);
                                 f32 B = (C_Y[Y][X] + 1.7720F*C_Cb[Y][X] + 128);
 
-                                Col[0] = ClampU8(R);
+                                Col[0] = ClampU8(B);
                                 Col[1] = ClampU8(G);
-                                Col[2] = ClampU8(B);
+                                Col[2] = ClampU8(R);
+                                Col[3] = 0;
 
-                                Col += 3;
+                                Col += 4;
 
                                 printf("(%4d,%4d,%4d), ", (int)R, (int)G, (int)B);
                                 // printf("(%4d,%4d,%4d), ", RGB[Y][X][0], RGB[Y][X][1], RGB[Y][X][2]);
@@ -274,8 +278,6 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
 
                             Row += Bitmap->Pitch;
                         }
-
-                        // Assert(!"Not implemented");
                     }
                 }
 
