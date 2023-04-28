@@ -117,6 +117,22 @@ typedef struct
 } jpeg_dht;
 #pragma pack(pop)
 
+static u16 JPEG_DHT_GetLength(const jpeg_dht* DHT)
+{
+    u16 Length = 0;
+
+    // TODO: SIMD!!!
+
+    for(u8 Idx = 0;
+        Idx < ArrayCount(DHT->Counts);
+        Idx++)
+    {
+        Length += DHT->Counts[Idx];
+    }
+
+    return Length;   
+}
+
 typedef struct
 {
     u8* At;
@@ -530,4 +546,70 @@ typedef struct
 } jpeg_sos;
 #pragma pack(pop)
 
-function int ParseJPEG(void* Data, usz Size, bitmap* Bitmap);
+#pragma pack(push, 1)
+typedef struct
+{
+    u16 Marker;
+} jpeg_soi;
+#pragma pack(pop)
+
+static void* PushBytes(buffer* Buffer, usz Count)
+{
+    void* Result = 0;
+
+    if(Buffer->Elapsed >= Count)
+    {
+        Result = Buffer->At;
+        Buffer->Elapsed -= Count;
+        Buffer->At += Count;
+    }
+
+    return Result;
+}
+
+#define PushStruct(Buffer, type) (type*)PushBytes(Buffer, sizeof(type))
+
+static int PushU16(buffer* Buffer, u16 Value)
+{
+    int Result = 0;
+
+    if(Buffer->Elapsed >= sizeof(Value))
+    {
+        *(u16*)(Buffer->At) = Value;
+
+        Buffer->At += sizeof(Value);
+        Buffer->Elapsed -= sizeof(Value);
+
+        Result = 1;
+    }
+
+    return Result;
+}
+
+static void* PushSegmentCount(buffer* Buffer, u16 Marker, u16 Length)
+{
+    void* Result = 0;
+
+    if(PushU16(Buffer, Marker))
+    {
+        // TODO: u32!
+        if(PushU16(Buffer, ByteSwap16(Length)))
+        {
+            Length -= 2;
+
+            if(Buffer->Elapsed >= Length)
+            {
+                Result = Buffer->At;
+                Buffer->At += Length;
+                Buffer->Elapsed -= Length;
+            }
+        }
+    }
+
+    return Result;
+}
+
+#define PushSegment(Buffer, Marker, type) (type*)PushSegmentCount(Buffer, Marker, sizeof(type))
+
+static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap);
+static void* ExportJPEG(bitmap* Bitmap, usz* Size);

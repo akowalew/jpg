@@ -25,10 +25,10 @@ typedef int8_t i8;
 
 typedef struct
 {
-    u32 Width;
-    u32 Height;
-    u32 Pitch;
-    u32 Size;
+    i32 Width;
+    i32 Height;
+    i32 Pitch;
+    i32 Size;
     u8* At;
 
     // Byte orders:
@@ -59,9 +59,11 @@ static void* PopBytes(buffer* Buffer, usz Count)
 
 #define PopU16(Buffer) (u16*)PopBytes(Buffer, sizeof(u16))
 
-static void* PlatformAlloc(usz Size);
-static int PlatformShowBitmap(bitmap* Bitmap, const char* Title);
+void* PlatformAlloc(usz Size);
+void* PlatformReadEntireFile(const char* Name, usz* Size);
+int PlatformWriteEntireFile(const char* Name, void* Data, usz Size);
+int PlatformShowBitmap(bitmap* Bitmap, const char* Title);
 
 static bitmap* GlobalBitmap;
 
-#define Assert(x) if(!(x)) { PlatformShowBitmap(GlobalBitmap, "bitmap"); *(int*)(0) = 0; }
+#define Assert(x) if((x) == 0) { PlatformShowBitmap(GlobalBitmap, "bitmap"); *(int*)(0) = 0; }

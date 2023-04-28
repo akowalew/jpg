@@ -116,20 +116,22 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                     Idx++)
                 {
                     Total += DHT->Counts[Idx];
-                    printf(" %2d: %d codes\n", Idx+1, DHT->Counts[Idx]);
+                    // printf(" %2d: %d codes\n", Idx+1, DHT->Counts[Idx]);
+                    printf(" %d, ", DHT->Counts[Idx]);
                 }
+                putchar('\n');
 
                 Assert(Length == Total);
                 u8* HuffmanCodes = DHT->Values;
 
-                printf("Codes:\n");
+                printf("Values:\n");
                 u8* At = HuffmanCodes;
                 for(u8 I = 0;
                     I < ArrayCount(DHT->Counts);
                     I++)
                 {
                     u8 Count = DHT->Counts[I];
-                    printf(" %2d: ", I+1);
+                    // printf(" %2d: ", I+1);
                     for(u8 J = 0;
                         J < Count;
                         J++)
@@ -287,4 +289,279 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
     }
 
     return 1;
+}
+
+static const u8 JPEG_STD_DQT_Y[1 + 64] = 
+{
+    // Id
+    0,
+
+    // Coefficients
+     3,   2,   2,   3,   2,   2,   3,   3,
+     3,   3,   4,   3,   3,   4,   5,   8,
+     5,   5,   4,   4,   5,  10,   7,   7,
+     6,   8,  12,  10,  12,  12,  11,  10,
+    11,  11,  13,  14,  18,  16,  13,  14,
+    17,  14,  11,  11,  16,  22,  16,  17,
+    19,  20,  21,  21,  21,  12,  15,  23,
+    24,  22,  20,  24,  18,  20,  21,  20,
+};
+
+static const u8 JPEG_STD_DQT_Chroma[1 + 64] =
+{
+    // Id,
+    1,
+
+    // Coefficients
+      3,   4,   4,   5,   4,   5,   9,   5,
+      5,   9,  20,  13,  11,  13,  20,  20,
+     20,  20,  20,  20,  20,  20,  20,  20,
+     20,  20,  20,  20,  20,  20,  20,  20,
+     20,  20,  20,  20,  20,  20,  20,  20,
+     20,  20,  20,  20,  20,  20,  20,  20,
+     20,  20,  20,  20,  20,  20,  20,  20,
+     20,  20,  20,  20,  20,  20,  20,  20,
+};
+
+static const u8 JPEG_STD_DHT00[] =
+{
+    // Id
+    0x00, 
+
+    // Counts:
+    /*  1: */ 0,
+    /*  2: */ 2,
+    /*  3: */ 2,
+    /*  4: */ 3,
+    /*  5: */ 1,
+    /*  6: */ 1,
+    /*  7: */ 1,
+    /*  8: */ 0,
+    /*  9: */ 0,
+    /* 10: */ 0,
+    /* 11: */ 0,
+    /* 12: */ 0,
+    /* 13: */ 0,
+    /* 14: */ 0,
+    /* 15: */ 0,
+    /* 16: */ 0,
+
+    // Codes:
+    /*  1: */
+    /*  2: */ 5, 6,
+    /*  3: */ 3, 4,
+    /*  4: */ 2, 7, 8,
+    /*  5: */ 1,
+    /*  6: */ 0,
+    /*  7: */ 9,
+    /*  8: */
+    /*  9: */
+    /* 10: */
+    /* 11: */
+    /* 12: */
+    /* 13: */
+    /* 14: */
+    /* 15: */
+    /* 16: */
+};
+
+static const u8 JPEG_STD_DHT01[] = 
+{
+    // Id
+    0x10,
+
+    // Counts:
+    /*  1: */ 0,
+    /*  2: */ 2,
+    /*  3: */ 1,
+    /*  4: */ 3,
+    /*  5: */ 2,
+    /*  6: */ 4,
+    /*  7: */ 5,
+    /*  8: */ 2,
+    /*  9: */ 4,
+    /* 10: */ 4,
+    /* 11: */ 3,
+    /* 12: */ 4,
+    /* 13: */ 8,
+    /* 14: */ 5,
+    /* 15: */ 5,
+    /* 16: */ 1,
+
+    // Values
+    /*  1: */
+    /*  2: */ 1, 2,
+    /*  3: */ 3,
+    /*  4: */ 0, 4, 17,
+    /*  5: */ 5, 33,
+    /*  6: */ 6, 18, 49, 65,
+    /*  7: */ 7, 19, 34, 81, 97,
+    /*  8: */ 20, 113,
+    /*  9: */ 8, 50, 129, 145,
+    /* 10: */ 21, 35, 66, 161,
+    /* 11: */ 82, 177, 193,
+    /* 12: */ 51, 98, 209, 225,
+    /* 13: */ 9, 22, 23, 36, 114, 146, 240, 241,
+    /* 14: */ 37, 52, 67, 130, 178,
+    /* 15: */ 24, 39, 68, 83, 162,
+    /* 16: */ 115,
+};
+
+static const u8 JPEG_STD_DHT10[] = 
+{
+    // Id
+    0x01,
+
+    // Counts
+    /*  1: */ 0,
+    /*  2: */ 2,
+    /*  3: */ 3,
+    /*  4: */ 1,
+    /*  5: */ 1,
+    /*  6: */ 1,
+    /*  7: */ 0,
+    /*  8: */ 0,
+    /*  9: */ 0,
+    /* 10: */ 0,
+    /* 11: */ 0,
+    /* 12: */ 0,
+    /* 13: */ 0,
+    /* 14: */ 0,
+    /* 15: */ 0,
+    /* 16: */ 0,
+
+    // Values
+    /*  1: */
+    /*  2: */ 1, 2,
+    /*  3: */ 0, 3, 4,
+    /*  4: */ 5,
+    /*  5: */ 6,
+    /*  6: */ 7,
+    /*  7: */
+    /*  8: */
+    /*  9: */
+    /* 10: */
+    /* 11: */
+    /* 12: */
+    /* 13: */
+    /* 14: */
+    /* 15: */
+    /* 16: */
+};
+
+static const u8 JPEG_STD_DHT11[] =
+{
+    // Counts:
+    /*  1: */ 0,
+    /*  2: */ 2,
+    /*  3: */ 2,
+    /*  4: */ 2,
+    /*  5: */ 2,
+    /*  6: */ 2,
+    /*  7: */ 1,
+    /*  8: */ 3,
+    /*  9: */ 3,
+    /* 10: */ 1,
+    /* 11: */ 7,
+    /* 12: */ 4,
+    /* 13: */ 2,
+    /* 14: */ 3,
+    /* 15: */ 0,
+    /* 16: */ 0,
+
+    // Codes:
+    /*  1: */
+    /*  2: */ 0, 1,
+    /*  3: */ 2, 17,
+    /*  4: */ 3, 33,
+    /*  5: */ 18, 49,
+    /*  6: */ 4, 65,
+    /*  7: */ 81,
+    /*  8: */ 19, 34, 97,
+    /*  9: */ 5, 50, 113,
+    /* 10: */ 145,
+    /* 11: */ 20, 35, 66, 129, 161, 177, 209,
+    /* 12: */ 6, 21, 193, 240,
+    /* 13: */ 36, 241,
+    /* 14: */ 51, 82, 162,
+    /* 15: */
+    /* 16: */
+};
+
+static void* ExportJPEG(bitmap* Bitmap, usz* Size)
+{
+    Assert(Bitmap->Width < 65536);
+    Assert(Bitmap->Height < 65536);
+
+    buffer Buffer;
+    Buffer.Elapsed = Bitmap->Size*2; // TODO: Dynamical approach, eeeh?
+    Buffer.At = PlatformAlloc(Buffer.Elapsed);
+    if(!Buffer.At)
+    {
+        return 0;
+    }
+
+    Assert(PushU16(&Buffer, JPEG_SOI));
+
+    jpeg_app0* APP0;
+
+    Assert(APP0 = PushSegment(&Buffer, JPEG_APP0, jpeg_app0));
+    APP0->JFIF[0] = 'J';
+    APP0->JFIF[1] = 'F';
+    APP0->JFIF[2] = 'I';
+    APP0->JFIF[3] = 'F';
+    APP0->JFIF[4] = '\0';
+    APP0->VersionMajor = 1;
+    APP0->VersionMinor = 1;
+    APP0->DensityUnit = 1;
+    APP0->HorizontalDensity = ByteSwap16(300);
+    APP0->VerticalDensity = ByteSwap16(300);
+    APP0->ThumbnailWidth = 0;
+    APP0->ThumbnailHeight = 0;
+
+    jpeg_dqt* DQT[2];
+
+    Assert(DQT[0] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(JPEG_STD_DQT_Y)));
+    memcpy(DQT[0], JPEG_STD_DQT_Y, sizeof(JPEG_STD_DQT_Y));
+
+    Assert(DQT[1] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(JPEG_STD_DQT_Chroma)));
+    memcpy(DQT[1], JPEG_STD_DQT_Chroma, sizeof(JPEG_STD_DQT_Chroma));
+
+    jpeg_sof0* SOF0;
+
+    Assert(SOF0 = PushSegment(&Buffer, JPEG_SOF0, jpeg_sof0));
+    SOF0->BitsPerSample = 8;
+    SOF0->ImageHeight = ByteSwap16(Bitmap->Height);
+    SOF0->ImageWidth = ByteSwap16(Bitmap->Width);
+    SOF0->NumComponents = 3;
+    SOF0->Components[0].ComponentId = 1;
+    SOF0->Components[0].VerticalSubsamplingFactor = 1;
+    SOF0->Components[0].HorizontalSubsamplingFactor = 1;
+    SOF0->Components[0].QuantizationTableId = 0;
+    SOF0->Components[1].ComponentId = 2;
+    SOF0->Components[1].VerticalSubsamplingFactor = 1;
+    SOF0->Components[1].HorizontalSubsamplingFactor = 1;
+    SOF0->Components[1].QuantizationTableId = 1;
+    SOF0->Components[2].ComponentId = 3;
+    SOF0->Components[2].VerticalSubsamplingFactor = 1;
+    SOF0->Components[2].HorizontalSubsamplingFactor = 1;
+    SOF0->Components[2].QuantizationTableId = 1;
+
+    jpeg_dht* DHT[2][2];
+
+    Assert(DHT[0][0] = PushSegmentCount(&Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT00)));
+    memcpy(DHT[0][0], JPEG_STD_DHT00, sizeof(JPEG_STD_DHT00));
+
+    Assert(DHT[0][1] = PushSegmentCount(&Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT01)));
+    memcpy(DHT[0][1], JPEG_STD_DHT01, sizeof(JPEG_STD_DHT01));
+
+    Assert(DHT[1][0] = PushSegmentCount(&Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT10)));
+    memcpy(DHT[1][0], JPEG_STD_DHT10, sizeof(JPEG_STD_DHT10));
+
+    Assert(DHT[1][1] = PushSegmentCount(&Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT11)));
+    memcpy(DHT[1][1], JPEG_STD_DHT11, sizeof(JPEG_STD_DHT11));
+
+    Assert(PushU16(&Buffer, JPEG_EOI));
+
+    return 0;
 }
