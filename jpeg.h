@@ -403,13 +403,29 @@ static inline u8 ClampU8(f32 F)
     {
         return 255;
     }
-    else if(F < 0)
+    else if(F <= 0)
     {
         return 0;
     }
     else
     {
         return (u8)F;
+    }
+}
+
+static inline i8 ClampI8(f32 F)
+{
+    if(F >= 127)
+    {
+        return 127;
+    }
+    else if(F <= -128)
+    {
+        return -128;
+    }
+    else
+    {
+        return (i8)F;
     }
 }
 
@@ -492,20 +508,20 @@ static void ScalarMul8x8(i16 M[8][8], u8* C)
     }
 }
 
+static const u8 ZigZagTable[8][8] =
+{
+    { 0,  1,  5,  6, 14, 15, 27, 28},
+    { 2,  4,  7, 13, 16, 26, 29, 42},
+    { 3,  8, 12, 17, 25, 30, 41, 43},
+    { 9, 11, 18, 24, 31, 40, 44, 53},
+    {10, 19, 23, 32, 39, 45, 52, 54},
+    {20, 22, 33, 38, 46, 51, 55, 60},
+    {21, 34, 37, 47, 50, 56, 59, 61},
+    {35, 36, 48, 49, 57, 58, 62, 63},
+};
+
 static void DeZigZag8x8(i16 Src[64], i16 Dst[8][8])
 {
-    static const u8 DeZigZagTable[8][8] =
-    {
-        { 0,  1,  5,  6, 14, 15, 27, 28},
-        { 2,  4,  7, 13, 16, 26, 29, 42},
-        { 3,  8, 12, 17, 25, 30, 41, 43},
-        { 9, 11, 18, 24, 31, 40, 44, 53},
-        {10, 19, 23, 32, 39, 45, 52, 54},
-        {20, 22, 33, 38, 46, 51, 55, 60},
-        {21, 34, 37, 47, 50, 56, 59, 61},
-        {35, 36, 48, 49, 57, 58, 62, 63},
-    };
-
     for(u8 Y = 0;
         Y < 8;
         Y++)
@@ -514,7 +530,7 @@ static void DeZigZag8x8(i16 Src[64], i16 Dst[8][8])
             X < 8;
             X++)
         {
-            u8 Index = DeZigZagTable[Y][X];
+            u8 Index = ZigZagTable[Y][X];
             Dst[Y][X] = Src[Index];
             printf("%4d ", Dst[Y][X]);
         }
@@ -595,8 +611,6 @@ static void* PushSegmentCount(buffer* Buffer, u16 Marker, u16 Length)
         // TODO: u32!
         if(PushU16(Buffer, ByteSwap16(Length)))
         {
-            Length -= 2;
-
             if(Buffer->Elapsed >= Length)
             {
                 Result = Buffer->At;
@@ -610,6 +624,275 @@ static void* PushSegmentCount(buffer* Buffer, u16 Marker, u16 Length)
 }
 
 #define PushSegment(Buffer, Marker, type) (type*)PushSegmentCount(Buffer, Marker, sizeof(type))
+
+static u8 EncodeNumber(i16 Number, u16* Value)
+{
+    // TODO: Optimize me please...
+
+    if(Number == 0)
+    {
+        return 0;
+    }
+
+    u32 Raw;
+    if(Number < 0)
+    {
+        Raw = -Number;
+    }
+    else
+    {
+        Raw = Number;
+    }
+
+    u8 Idx;
+    for(Idx = 1;
+        Idx < 16;
+        Idx++)
+    {
+        u32 Top = (1 << Idx);
+        if(Raw < Top)
+        {
+            break;        
+        }  
+    }
+
+    if(Number < 0)
+    {
+        u32 Top = (1 << Idx);
+        *Value = (u16)(Top - Raw - 1);
+    }
+    else
+    {
+        *Value = (u16)(Raw);
+    }
+
+    return Idx;
+}
+
+static i16 DecodeNumber(u8 Size, u16 Value)
+{
+    if(Size == 0)
+    {
+        return 0;
+    }
+
+    u16 Mask = (1 << (Size - 1));
+    if(Value & Mask)
+    {
+        return Value;
+    }
+    else
+    {
+        return -(1 << Size) + Value + 1;
+    }
+}
+
+static int PushPixels(buffer* Buffer, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+{
+    f32 Tmp[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += DCT8x8Table[Y][K] * P[K][X];
+            }
+
+            Tmp[Y][X] = S;
+        }
+    }
+
+    f32 D[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += Tmp[Y][K] * tDCT8x8Table[K][X];
+            }
+
+            D[Y][X] = S;
+        }
+    }
+
+    i16 C[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            C[Y][X] = (i16)(D[Y][X] / DQT[Y*8+X]);
+        }
+    }
+
+    i16 Z[64];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            u8 Index = ZigZagTable[Y][X];
+
+            Z[Index] = C[Y][X];
+        }
+    }
+
+    i16 PrevDC = *DC;
+
+    *DC = Z[0];
+
+    Z[0] = Z[0] - PrevDC;
+
+    u16 Number;
+    u8 Size = EncodeNumber(Z[0], &Number);
+    *(Buffer->At++) = Size;
+    if(Size)
+    {
+        *(u16*)(Buffer->At) = Number;
+        Buffer->At += 2;
+    }
+
+    for(u8 Idx = 1;
+        Idx < 64;
+        Idx++)
+    {
+        *(i16*)(Buffer->At) = Z[Idx];
+        Buffer->At += 2;
+    }
+
+    return 1;
+}
+
+static int PopPixels(buffer* Buffer, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+{
+    i16 Z[64]; 
+
+    u16 Number = 0;
+    u8 Size = *(Buffer->At++);
+    if(Size)
+    {
+        Number = *(u16*)(Buffer->At);
+        Buffer->At += 2;
+    }
+
+    Z[0] = DecodeNumber(Size, Number);
+
+    Z[0] += *DC;
+
+    *DC = Z[0];
+
+    for(u8 Idx = 1;
+        Idx < 64;
+        Idx++)
+    {
+        Z[Idx] = *(i16*)(Buffer->At);
+        Buffer->At += 2;
+    }
+    
+    i16 C[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            u8 Index = ZigZagTable[Y][X];
+
+            C[Y][X] = Z[Index];
+        }
+    }
+
+    f32 D[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            D[Y][X] = (f32)(C[Y][X] * DQT[Y*8+X]);
+        }
+    }
+
+    f32 Tmp[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += tDCT8x8Table[Y][K] * D[K][X];
+            }
+
+            Tmp[Y][X] = S;
+        }
+    }
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += Tmp[Y][K] * DCT8x8Table[K][X];
+            }
+
+            P[Y][X] = (i8)ClampI8(S);
+        }
+    }
+
+    return 1;
+}
 
 static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap);
 static void* ExportJPEG(bitmap* Bitmap, usz* Size);

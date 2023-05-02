@@ -494,7 +494,7 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
     Assert(Bitmap->Height < 65536);
 
     buffer Buffer;
-    Buffer.Elapsed = Bitmap->Size*2; // TODO: Dynamical approach, eeeh?
+    Buffer.Elapsed = Bitmap->Size*16; // TODO: Dynamical approach, eeeh?
     Buffer.At = PlatformAlloc(Buffer.Elapsed);
     if(!Buffer.At)
     {
@@ -561,7 +561,151 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
     Assert(DHT[1][1] = PushSegmentCount(&Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT11)));
     memcpy(DHT[1][1], JPEG_STD_DHT11, sizeof(JPEG_STD_DHT11));
 
+    jpeg_sos* SOS;
+
+    Assert(SOS = PushSegment(&Buffer, JPEG_SOS, jpeg_sos));
+    SOS->NumComponents = 3;
+    SOS->Components[0].ComponentId = 1;
+    SOS->Components[0].IndexDC = 0;
+    SOS->Components[0].IndexAC = 0;
+    SOS->Components[1].ComponentId = 2;
+    SOS->Components[1].IndexAC = 1;
+    SOS->Components[1].IndexDC = 1;
+    SOS->Components[2].ComponentId = 3;
+    SOS->Components[2].IndexAC = 1;
+    SOS->Components[2].IndexDC = 1;
+    SOS->StartOfSelection = 0;
+    SOS->EndOfSelection = 63;
+    SOS->ApproximationBitLow = 0;
+    SOS->ApproximationBitHigh = 0;
+
+    u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
+    u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
+
+    buffer Orig = Buffer;
+
+    i16 DC_Y = 0;
+    i16 DC_Cb = 0;
+    i16 DC_Cr = 0;
+
+    u8* Row = Bitmap->At;
+    for(u16 BlockY = 0; 
+        BlockY < NumBlocksY; 
+        BlockY++)
+    {
+        u8* Col = Row;
+
+        for(u16 BlockX = 0;
+            BlockX < NumBlocksX;
+            BlockX++)
+        {
+            i8 Y[8][8];
+            i8 Cb[8][8];
+            i8 Cr[8][8];
+
+            u8* SubRow = Col;
+            for(u8 SubY = 0;
+                SubY < 8;
+                SubY++)
+            {
+                u8* SubCol = SubRow;
+
+                for(u8 SubX = 0;
+                    SubX < 8;
+                    SubX++)
+                {
+                    u8 B = SubCol[0];
+                    u8 G = SubCol[1];
+                    u8 R = SubCol[2];
+
+                    Y[SubY][SubX]  = (i8)(0.299f*R + 0.587f*G + 0.114f*B - 128);
+                    Cb[SubY][SubX] = (i8)(-0.168736f*R - 0.331264f*G + 0.5f*B);
+                    Cr[SubY][SubX] = (i8)(0.5f*R - 0.418688f*G - 0.081312f*B);
+
+                    SubCol += 4;
+                }
+
+                SubRow += Bitmap->Pitch;
+            }
+
+            Assert(PushPixels(&Buffer, Y, &JPEG_STD_DQT_Y[1], JPEG_STD_DHT00, JPEG_STD_DHT01, &DC_Y));
+            Assert(PushPixels(&Buffer, Cb, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cb));
+            Assert(PushPixels(&Buffer, Cr, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cr));
+
+
+            Col += 8 * 4;
+        }
+
+        Row += Bitmap->Pitch * 8;
+    }
+
+
+#if 1
+    Buffer = Orig;
+
+    DC_Y = 0;
+    DC_Cb = 0;
+    DC_Cr = 0;
+
+    Row = Bitmap->At;
+    for(u16 BlockY = 0; 
+        BlockY < NumBlocksY; 
+        BlockY++)
+    {
+        u8* Col = Row;
+
+        for(u16 BlockX = 0;
+            BlockX < NumBlocksX;
+            BlockX++)
+        {
+            i8 Y[8][8];
+            i8 Cb[8][8];
+            i8 Cr[8][8];
+
+            Assert(PopPixels(&Buffer, Y, &JPEG_STD_DQT_Y[1], JPEG_STD_DHT00, JPEG_STD_DHT01, &DC_Y));
+            Assert(PopPixels(&Buffer, Cb, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cb));
+            Assert(PopPixels(&Buffer, Cr, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cr));
+
+            u8* SubRow = Col;
+            for(u8 SubY = 0;
+                SubY < 8;
+                SubY++)
+            {
+                u8* SubCol = SubRow;
+
+                for(u8 SubX = 0;
+                    SubX < 8;
+                    SubX++)
+                {
+                    u8 Y_value = Y[SubY][SubX] + 128;
+                    i8 Cb_value = Cb[SubY][SubX];
+                    i8 Cr_value = Cr[SubY][SubX];
+
+                    f32 B = Y_value + 1.772F * Cb_value;
+                    f32 G = Y_value - 0.3441F * Cb_value - 0.71414F * Cr_value;
+                    f32 R = Y_value + 1.402F * Cr_value;
+
+                    SubCol[0] = (u8)ClampU8(B);
+                    SubCol[1] = (u8)ClampU8(G);
+                    SubCol[2] = (u8)ClampU8(R);
+
+                    SubCol += 4;
+                }
+
+                SubRow += Bitmap->Pitch;
+            }
+
+            Col += 8 * 4;
+        }
+
+        Row += Bitmap->Pitch * 8;
+    }
+
+    PlatformShowBitmap(Bitmap, "Bitmap");
+#endif
+
     Assert(PushU16(&Buffer, JPEG_EOI));
+
 
     return 0;
 }
