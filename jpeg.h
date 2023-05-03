@@ -141,72 +141,16 @@ typedef struct
     u8 Len;
 } bit_stream;
 
-static int Refill(bit_stream* BitStream)
-{
-    u8 BytesCount = (32 - BitStream->Len) / 8;
-    if(BitStream->Elapsed < BytesCount)
-    {
-        return 0;
-    }
+static int Refill(bit_stream* BitStream);
 
-    printf("Refill: ");
-    for(u8 ByteIdx = 0;
-        ByteIdx < BytesCount;
-        ByteIdx++)
-    {
-        u8 Byte = BitStream->At[ByteIdx];
-        printf("0x%02X, ", Byte);
+static int PopBits(bit_stream* BitStream, u16* Value, u8 Size);
 
-        if(Byte == 0xFF)
-        {
-            Assert(BitStream->Elapsed >= (BytesCount+1));
-            u8 NextByte = BitStream->At[ByteIdx+1];
-            if(NextByte == 0x00)
-            {
-                BitStream->At++;
-                BitStream->Elapsed--;
-            }
-            else
-            {
-                // Assert(!"Invalid sequence!!!");
-                return 0;
-            }
-        }
-
-        Assert(BitStream->Len+8<=32);
-        BitStream->Buf |= (Byte << BitStream->Len);
-        BitStream->Len += 8;
-    }
-    putchar('\n');
-
-    BitStream->At += BytesCount;
-    BitStream->Elapsed -= BytesCount;;
-
-    printf("BitStream: ");
-    for(int Idx = BitStream->Len-1;
-        Idx >= 0;
-        Idx--)
-    {
-        putchar((BitStream->Buf & (1 << Idx)) ? '1' : '0');
-    }
-    printf("\n");
-    fflush(stdout);
-    return 1;
-}
-
-static int PopBits(bit_stream* BitStream, u8 Size, i16* Value)
+static int PopValue(bit_stream* BitStream, i16* Value, u8 Size)
 {
     int Result = 0;
 
-    if(Size == 0)
-    {
-        *Value = 0;
-        return 1;
-    }
-
-    Assert(Size <= sizeof(*Value)*8);
-
-    if(Refill(BitStream))
+    u16 Raw;
+    if(PopBits(BitStream, &Raw, Size))
     {
         printf("PopBits(%d): ", Size);
         for(int I = Size-1;
@@ -217,8 +161,6 @@ static int PopBits(bit_stream* BitStream, u8 Size, i16* Value)
         }
         putchar('\n');
 
-        u16 Mask = (1 << Size) - 1;
-        u16 Raw = (BitStream->Buf & Mask);
         u16 Thresh = (1 << (Size - 1));
         if(Raw >= Thresh)
         {
@@ -229,10 +171,8 @@ static int PopBits(bit_stream* BitStream, u8 Size, i16* Value)
             *Value = Raw - (2 * Thresh - 1);
         }
 
-        Assert(BitStream->Len >= Size);
         printf("Value: %d\n", *Value);
-        BitStream->Buf >>= Size;
-        BitStream->Len -= Size;
+
         Result = 1;
     }
 
@@ -435,7 +375,7 @@ static void DecodeMCU(bit_stream* BitStream, i16* C, jpeg_dht* HT_DC, jpeg_dht* 
     Assert(DecodeSymbol(BitStream, HT_DC, &DC_Size));
 
     i16 DC_Coeff;
-    Assert(PopBits(BitStream, DC_Size, &DC_Coeff));
+    Assert(PopValue(BitStream, &DC_Coeff, DC_Size));
     
     *DC_Sum += DC_Coeff;
 
@@ -464,7 +404,7 @@ static void DecodeMCU(bit_stream* BitStream, i16* C, jpeg_dht* HT_DC, jpeg_dht* 
         printf("AC_Size: %d\n", AC_Size);
 
         i16 AC_Coeff;
-        Assert(PopBits(BitStream, AC_Size, &AC_Coeff));
+        Assert(PopValue(BitStream, &AC_Coeff, AC_Size));
 
         Idx += AC_Count;
         Assert(Idx <= N);
@@ -687,7 +627,109 @@ static i16 DecodeNumber(u8 Size, u16 Value)
     }
 }
 
-static int PushPixels(buffer* Buffer, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+static int Refill(bit_stream* BitStream)
+{
+    u8 BytesCount = (32 - BitStream->Len) / 8;
+    Assert(BitStream->Elapsed > BytesCount);
+
+    for(u8 ByteIdx = 0;
+        ByteIdx < BytesCount;
+        ByteIdx++)
+    {
+        u32 Byte = *(BitStream->At++);
+        BitStream->Elapsed--;
+        if(Byte == 0xFF)
+        {
+            u8 NextByte = *(BitStream->At++);
+            BitStream->Elapsed--;
+            Assert(NextByte == 0x00);
+        }
+
+        BitStream->Buf |= (Byte << BitStream->Len);
+        BitStream->Len += 8;
+    }
+
+    return 1;
+}
+
+static int Deplete(bit_stream* BitStream)
+{
+    u8 BytesCount = BitStream->Len / 8;
+    Assert(BitStream->Elapsed > BytesCount);
+
+    for(u8 Idx = 0;
+        Idx < BytesCount;
+        Idx++)
+    {
+        BitStream->Len -= 8;
+
+        u8 Byte = (BitStream->Buf >> BitStream->Len) & 0xFF;
+        *(BitStream->At++) = Byte;
+        BitStream->Elapsed--;
+        if(Byte == 0xFF)
+        {
+            *(BitStream->At++) = 0x00;
+            BitStream->Elapsed--;            
+        }
+    }
+
+    return 1;
+}
+
+static int PopBits(bit_stream* BitStream, u16* Value, u8 Size)
+{
+    int Result = 0;
+
+    if(Size == 0)
+    {
+        *Value = 0;
+        return 1;
+    }
+
+    if(Refill(BitStream))
+    {
+        Assert(BitStream->Len >= Size);
+
+        u16 Mask = (1 << Size) - 1;
+
+        *Value = (BitStream->Buf & Mask);
+        BitStream->Buf >>= Size;
+        BitStream->Len -= Size;
+
+        Result = 1;
+    }
+
+    return Result;
+}
+
+static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
+{
+    int Result = 0;
+
+    if(Size == 0)
+    {
+        return 1;
+    }
+
+    Assert(Size <= sizeof(Value)*8);
+
+    if(Deplete(BitStream))
+    {
+        Assert(32 - BitStream->Len > Size);
+
+        u16 Mask = (1 << Size) - 1;
+
+        BitStream->Buf <<= Size;
+        BitStream->Buf |= (Value & Mask);
+        BitStream->Len += Size;
+
+        Result = 1;
+    }
+
+    return Result;
+}
+
+static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
     f32 Tmp[8][8];
 
@@ -771,50 +813,38 @@ static int PushPixels(buffer* Buffer, i8 P[8][8], const u8* DQT, const u8* DHT_D
 
     Z[0] = Z[0] - PrevDC;
 
-    u16 Number;
-    u8 Size = EncodeNumber(Z[0], &Number);
-    *(Buffer->At++) = Size;
-    if(Size)
-    {
-        *(u16*)(Buffer->At) = Number;
-        Buffer->At += 2;
-    }
+    u16 Value;
+    u8 Size = EncodeNumber(Z[0], &Value);
+    PushBits(BitStream, Size, 8);
+    PushBits(BitStream, Value, Size);
 
     for(u8 Idx = 1;
         Idx < 64;
         Idx++)
     {
-        *(i16*)(Buffer->At) = Z[Idx];
-        Buffer->At += 2;
+        PushBits(BitStream, Z[Idx], 16);
     }
 
     return 1;
 }
 
-static int PopPixels(buffer* Buffer, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
     i16 Z[64]; 
 
-    u16 Number = 0;
-    u8 Size = *(Buffer->At++);
-    if(Size)
-    {
-        Number = *(u16*)(Buffer->At);
-        Buffer->At += 2;
-    }
-
-    Z[0] = DecodeNumber(Size, Number);
-
+    u16 Value;
+    u16 Size;
+    PopBits(BitStream, &Size, 8);
+    PopBits(BitStream, &Value, (u8)Size);
+    Z[0] = DecodeNumber((u8)Size, Value);
     Z[0] += *DC;
-
     *DC = Z[0];
 
     for(u8 Idx = 1;
         Idx < 64;
         Idx++)
     {
-        Z[Idx] = *(i16*)(Buffer->At);
-        Buffer->At += 2;
+        PopBits(BitStream, (u16*)&Z[Idx], 16);
     }
     
     i16 C[8][8];

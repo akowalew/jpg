@@ -582,7 +582,11 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
     u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
     u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
 
-    buffer Orig = Buffer;
+    bit_stream BitStream;
+    BitStream.At = Buffer.At;
+    BitStream.Elapsed = Buffer.Elapsed;
+    BitStream.Buf = 0;
+    BitStream.Len = 0;
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;
@@ -628,10 +632,9 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
                 SubRow += Bitmap->Pitch;
             }
 
-            Assert(PushPixels(&Buffer, Y, &JPEG_STD_DQT_Y[1], JPEG_STD_DHT00, JPEG_STD_DHT01, &DC_Y));
-            Assert(PushPixels(&Buffer, Cb, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cb));
-            Assert(PushPixels(&Buffer, Cr, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cr));
-
+            Assert(PushPixels(&BitStream, Y, &JPEG_STD_DQT_Y[1], JPEG_STD_DHT00, JPEG_STD_DHT01, &DC_Y));
+            Assert(PushPixels(&BitStream, Cb, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cb));
+            Assert(PushPixels(&BitStream, Cr, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cr));
 
             Col += 8 * 4;
         }
@@ -639,9 +642,11 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
         Row += Bitmap->Pitch * 8;
     }
 
-
 #if 1
-    Buffer = Orig;
+    BitStream.At = Buffer.At;
+    BitStream.Elapsed = Buffer.Elapsed;
+    BitStream.Buf = 0;
+    BitStream.Len = 0;
 
     DC_Y = 0;
     DC_Cb = 0;
@@ -662,9 +667,9 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
             i8 Cb[8][8];
             i8 Cr[8][8];
 
-            Assert(PopPixels(&Buffer, Y, &JPEG_STD_DQT_Y[1], JPEG_STD_DHT00, JPEG_STD_DHT01, &DC_Y));
-            Assert(PopPixels(&Buffer, Cb, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cb));
-            Assert(PopPixels(&Buffer, Cr, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cr));
+            Assert(PopPixels(&BitStream, Y, &JPEG_STD_DQT_Y[1], JPEG_STD_DHT00, JPEG_STD_DHT01, &DC_Y));
+            Assert(PopPixels(&BitStream, Cb, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cb));
+            Assert(PopPixels(&BitStream, Cr, &JPEG_STD_DQT_Chroma[1], JPEG_STD_DHT10, JPEG_STD_DHT11, &DC_Cr));
 
             u8* SubRow = Col;
             for(u8 SubY = 0;
@@ -705,7 +710,6 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
 #endif
 
     Assert(PushU16(&Buffer, JPEG_EOI));
-
 
     return 0;
 }

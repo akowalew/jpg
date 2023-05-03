@@ -7,7 +7,8 @@
 
 void* PlatformAlloc(usz Size)
 {
-    return VirtualAlloc(0, Size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    void* Result = VirtualAlloc(0, Size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    return Result;
 }
 
 void* PlatformReadEntireFile(const char* Name, usz* Size)
