@@ -183,7 +183,7 @@ static int DecodeSymbol(bit_stream* BitStream, jpeg_dht* DHT, u8* Symbol)
 {
     int Result = 0;
 
-    if(Refill(BitStream));
+    if(Refill(BitStream))
     {
         u16 Code = 0;
         u8* At = DHT->Values;
