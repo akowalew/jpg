@@ -661,9 +661,10 @@ static int Deplete(bit_stream* BitStream)
         Idx < BytesCount;
         Idx++)
     {
+        u8 Byte = (BitStream->Buf & 0xFF);
+        BitStream->Buf >>= 8;
         BitStream->Len -= 8;
 
-        u8 Byte = (BitStream->Buf >> BitStream->Len) & 0xFF;
         *(BitStream->At++) = Byte;
         BitStream->Elapsed--;
         if(Byte == 0xFF)
@@ -715,12 +716,11 @@ static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
 
     if(Deplete(BitStream))
     {
-        Assert(32 - BitStream->Len > Size);
+        Assert(BitStream->Len + Size <= 32);
 
         u16 Mask = (1 << Size) - 1;
-
-        BitStream->Buf <<= Size;
-        BitStream->Buf |= (Value & Mask);
+        u32 Raw = (Value & Mask);
+        BitStream->Buf |= (Raw << BitStream->Len);
         BitStream->Len += Size;
 
         Result = 1;
