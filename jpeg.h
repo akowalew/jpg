@@ -627,6 +627,16 @@ static i16 DecodeNumber(u8 Size, u16 Value)
     }
 }
 
+#define ReverseBits8(x) ((((x) * 0x80200802ULL) & 0x0884422110ULL) * 0x0101010101ULL >> 32)
+
+static u16 ReverseBits16(u16 Value)
+{
+    u16 Low = ReverseBits8(Value & 0xFF);
+    u16 High = ReverseBits8(Value >> 8);
+    u16 Result = (Low << 8) | High;
+    return Result;
+}
+
 static int Refill(bit_stream* BitStream)
 {
     u8 BytesCount = (32 - BitStream->Len) / 8;
@@ -645,33 +655,14 @@ static int Refill(bit_stream* BitStream)
             Assert(NextByte == 0x00);
         }
 
+#if 0
         BitStream->Buf |= (Byte << BitStream->Len);
+#else
+        BitStream->Buf <<= 8;
+        BitStream->Buf |= Byte;
+#endif
+
         BitStream->Len += 8;
-    }
-
-    return 1;
-}
-
-static int Deplete(bit_stream* BitStream)
-{
-    u8 BytesCount = BitStream->Len / 8;
-    Assert(BitStream->Elapsed > BytesCount);
-
-    for(u8 Idx = 0;
-        Idx < BytesCount;
-        Idx++)
-    {
-        u8 Byte = (BitStream->Buf & 0xFF);
-        BitStream->Buf >>= 8;
-        BitStream->Len -= 8;
-
-        *(BitStream->At++) = Byte;
-        BitStream->Elapsed--;
-        if(Byte == 0xFF)
-        {
-            *(BitStream->At++) = 0x00;
-            BitStream->Elapsed--;            
-        }
     }
 
     return 1;
@@ -681,11 +672,7 @@ static int PopBits(bit_stream* BitStream, u16* Value, u8 Size)
 {
     int Result = 0;
 
-    if(Size == 0)
-    {
-        *Value = 0;
-        return 1;
-    }
+    Assert(Size);
 
     if(Refill(BitStream))
     {
@@ -693,9 +680,14 @@ static int PopBits(bit_stream* BitStream, u16* Value, u8 Size)
 
         u16 Mask = (1 << Size) - 1;
 
+#if 0
         *Value = (BitStream->Buf & Mask);
         BitStream->Buf >>= Size;
         BitStream->Len -= Size;
+#else
+        BitStream->Len -= Size;
+        *Value = (BitStream->Buf >> BitStream->Len) & Mask;
+#endif
 
         Result = 1;
     }
@@ -703,30 +695,141 @@ static int PopBits(bit_stream* BitStream, u16* Value, u8 Size)
     return Result;
 }
 
+static int PopSymbol(bit_stream* BitStream, const u8* DHT, u8* Value)
+{
+    Assert(Refill(BitStream));
+
+    const u8* Counts = &DHT[0];
+    const u8* At = &DHT[16];
+
+    u16 Code = 0;
+    for(u8 I = 0; I < 16; I++)
+    {
+        u8 BitLen = I+1;
+        Assert(BitStream->Len > BitLen);
+
+#if 0
+        u16 Compare = BitStream->Buf & ((1 << BitLen) - 1);
+#else
+        u16 Mask = (1 << BitLen) - 1;
+        u8 NextLen = (BitStream->Len - BitLen);
+        u16 Compare = (BitStream->Buf >> NextLen) & Mask;
+#endif
+
+        for(u8 J = 0; J < Counts[I]; J++)
+        {
+            u16 Symbol = ReverseBits16(Code) >> (16 - BitLen);
+            if(Compare == Symbol)
+            {
+#if 0
+                BitStream->Len -= BitLen;
+                BitStream->Buf >>= BitLen;
+#else
+                BitStream->Len = NextLen;
+#endif
+
+                *Value = *At;
+                return 1;
+            }
+
+            Code++;
+            At++;
+        }
+
+        Code <<= 1;
+    }
+
+    return 0;
+}
+
+static int Flush(bit_stream* BitStream)
+{
+    u8 BytesCount = BitStream->Len / 8;
+    Assert(BitStream->Elapsed > BytesCount);
+
+    for(u8 Idx = 0;
+        Idx < BytesCount;
+        Idx++)
+    {
+#if 0
+        u8 Byte = (BitStream->Buf & 0xFF);
+        BitStream->Buf >>= 8;
+        BitStream->Len -= 8;
+#else
+        BitStream->Len -= 8;
+        u8 Byte = (BitStream->Buf >> BitStream->Len) & 0xFF;
+#endif
+
+        *(BitStream->At++) = Byte;
+        BitStream->Elapsed--;
+        if(Byte == 0xFF)
+        {
+            *(BitStream->At++) = 0x00;
+            BitStream->Elapsed--;
+        }
+    }
+
+    return 1;
+}
+
 static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
 {
     int Result = 0;
 
-    if(Size == 0)
-    {
-        return 1;
-    }
-
+    Assert(Size);
     Assert(Size <= sizeof(Value)*8);
 
-    if(Deplete(BitStream))
+    if(Flush(BitStream))
     {
         Assert(BitStream->Len + Size <= 32);
 
         u16 Mask = (1 << Size) - 1;
         u32 Raw = (Value & Mask);
+
+#if 0
         BitStream->Buf |= (Raw << BitStream->Len);
+#else
+        BitStream->Buf <<= Size;
+        BitStream->Buf |= Raw;
+#endif
+
         BitStream->Len += Size;
 
         Result = 1;
     }
 
     return Result;
+}
+
+static int PushSymbol(bit_stream* BitStream, const u8* DHT, u8 Value)
+{
+    // TODO: Separate push/encode symbol?
+
+    const u8* Counts = &DHT[0];
+    const u8* At = &DHT[16];
+
+    u16 Code = 0;
+    for(u8 I = 0; I < 16; I++)
+    {
+        u8 BitLen = I+1;
+        for(u16 J = 0; J < Counts[I]; J++)
+        {
+            if(*At == Value)
+            {
+                // TODO: Isn't there really any clever way for that?!
+                u16 Symbol = ReverseBits16(Code) >> (16 - BitLen);
+                printf("(0x%08lx) 0x%02x -> 0x%04x\n", (u64)DHT, Value, Symbol);
+                return PushBits(BitStream, Symbol, BitLen);
+            }
+
+            Code++;
+            At++;
+        }
+
+        Code <<= 1;
+    }
+
+    return 0;
 }
 
 static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
@@ -813,16 +916,45 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
 
     Z[0] = Z[0] - PrevDC;
 
-    u16 Value;
-    u8 Size = EncodeNumber(Z[0], &Value);
-    PushBits(BitStream, Size, 8);
-    PushBits(BitStream, Value, Size);
+    u16 DC_Value;
+    u8 DC_Size = EncodeNumber(Z[0], &DC_Value);
+    Assert(PushSymbol(BitStream, DHT_DC, DC_Size));
+    if(DC_Size)
+    {
+        Assert(PushBits(BitStream, DC_Value, DC_Size));
+    }
 
     for(u8 Idx = 1;
         Idx < 64;
         Idx++)
     {
-        PushBits(BitStream, Z[Idx], 16);
+        u8 AC_RunLength = 0;
+        while(!Z[Idx])
+        {
+            Idx++;
+            AC_RunLength++;
+            if(Idx == 64)
+            {
+                Assert(PushSymbol(BitStream, DHT_AC, 0x00));
+                return 1;
+            }
+            else if(AC_RunLength == 16)
+            {
+                Assert(PushSymbol(BitStream, DHT_AC, 0xF0));
+                AC_RunLength = 0;
+            }
+        }
+
+        u16 AC_Value;
+        u8 AC_Size = EncodeNumber(Z[Idx], &AC_Value);
+
+        u8 AC_RS = (AC_RunLength << 4) | AC_Size;
+
+        Assert(PushSymbol(BitStream, DHT_AC, AC_RS));
+        if(AC_Size)
+        {
+            Assert(PushBits(BitStream, AC_Value, AC_Size));
+        }
     }
 
     return 1;
@@ -830,21 +962,53 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
 
 static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
-    i16 Z[64]; 
+    i16 Z[64] = {0};
 
-    u16 Value;
-    u16 Size;
-    PopBits(BitStream, &Size, 8);
-    PopBits(BitStream, &Value, (u8)Size);
-    Z[0] = DecodeNumber((u8)Size, Value);
+    u8 DC_Size;
+    Assert(PopSymbol(BitStream, DHT_DC, &DC_Size));
+
+    u16 DC_Value = 0;
+    if(DC_Size)
+    {
+        Assert(PopBits(BitStream, &DC_Value, DC_Size));
+    }
+
+    Z[0] = DecodeNumber(DC_Size, DC_Value);
+
     Z[0] += *DC;
+
     *DC = Z[0];
 
     for(u8 Idx = 1;
         Idx < 64;
         Idx++)
     {
-        PopBits(BitStream, (u16*)&Z[Idx], 16);
+        u8 AC_RS;
+        Assert(PopSymbol(BitStream, DHT_AC, &AC_RS));
+        if(AC_RS == 0x00)
+        {
+            break;
+        }
+        else if(AC_RS == 0xF0)
+        {
+            Idx += 16;
+            Assert(Idx <= 64);
+            continue;
+        }
+
+        u8 AC_RunLength = AC_RS >> 4;
+        u8 AC_Size = AC_RS & 0xF;
+        Assert(AC_Size);
+
+        Idx += AC_RunLength;
+        Assert(Idx < 64);
+
+        u16 AC_Value;
+        Assert(PopBits(BitStream, &AC_Value, AC_Size));
+
+        Z[Idx] = DecodeNumber(AC_Size, AC_Value);
+
+        continue;
     }
     
     i16 C[8][8];

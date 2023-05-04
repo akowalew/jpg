@@ -66,4 +66,4 @@ int PlatformShowBitmap(bitmap* Bitmap, const char* Title);
 
 static bitmap* GlobalBitmap;
 
-#define Assert(x) if((x) == 0) { PlatformShowBitmap(GlobalBitmap, "bitmap"); *(int*)(0) = 0; }
+#define Assert(x) if((x) == 0) { fflush(stdout); *(int*)(0) = 0; }
