@@ -145,8 +145,8 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 Assert(DHT->TableId < 2);
                 HuffmanTables[DHT->TableId][DHT->TableClass] = DHT;
 
-                At = HuffmanCodes;
                 u16 Code = 0;
+                At = HuffmanCodes;
                 printf("Tree:\n");
                 for(u8 I = 0; I < 16; I++)
                 {
@@ -189,101 +189,6 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
 
                 Assert(SOS->NumComponents == 3);
 
-                bit_stream BitStream;
-                BitStream.At = Buffer.At;
-                BitStream.Elapsed = Buffer.Elapsed;
-                BitStream.Buf = 0;
-                BitStream.Len = 0;
-
-                u16 NumBlocksX = (SOF0->ImageWidth + 7) / 8;
-                u16 NumBlocksY = (SOF0->ImageHeight + 7) / 8;
-
-                i16 DC_Y = 0;
-                i16 DC_Cb = 0;
-                i16 DC_Cr = 0;
-
-                Bitmap->Width = SOF0->ImageWidth;
-                Bitmap->Height = SOF0->ImageHeight;
-                Bitmap->Pitch = Bitmap->Width * 4;
-                Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
-                Bitmap->At = PlatformAlloc(Bitmap->Size);
-                Assert(Bitmap->At);
-                GlobalBitmap = Bitmap;
-
-                for(u16 BlockY = 0;
-                    BlockY < NumBlocksY;
-                    BlockY++)
-                {
-                    for(u16 BlockX = 0;
-                        BlockX < NumBlocksX;
-                        BlockX++)
-                    {
-                        i16 ZZ_Y[64] = {0};
-                        i16 ZZ_Cb[64] = {0};
-                        i16 ZZ_Cr[64] = {0};
-
-                        DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0][0], HuffmanTables[0][1], &DC_Y, 64);
-                        // DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0], &DC_Y, 64);
-                        // DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0], &DC_Y, 64);
-                        // DecodeMCU(&BitStream, ZZ_Y, HuffmanTables[0], &DC_Y, 64);
-                        DecodeMCU(&BitStream, ZZ_Cb, HuffmanTables[1][0], HuffmanTables[1][1], &DC_Cb, 64);
-                        DecodeMCU(&BitStream, ZZ_Cr, HuffmanTables[1][0], HuffmanTables[1][1], &DC_Cr, 64);
-
-                        i16 C_Y[8][8];
-                        i16 C_Cb[8][8];
-                        i16 C_Cr[8][8];
-
-                        printf("Y:\n");
-                        DeZigZag8x8(ZZ_Y, C_Y);
-                        printf("Cb:\n");
-                        DeZigZag8x8(ZZ_Cb, C_Cb);
-                        printf("Cr:\n");
-                        DeZigZag8x8(ZZ_Cr, C_Cr);
-
-                        printf("Y:\n");
-                        ScalarMul8x8(C_Y, QuantizationTables[0]);
-                        printf("Cb:\n");
-                        ScalarMul8x8(C_Cr, QuantizationTables[1]);
-                        printf("Cr:\n");
-                        ScalarMul8x8(C_Cr, QuantizationTables[1]);
-
-                        printf("Y:\n");
-                        IDCT8x8(C_Y);
-                        printf("Cb:\n");
-                        IDCT8x8(C_Cb);
-                        printf("Cr:\n");
-                        IDCT8x8(C_Cr);
-
-                        printf("RGB:\n");
-                        u8* Row = Bitmap->At + (BlockY*8)*Bitmap->Pitch + (BlockX*8)*4;
-                        for(u8 Y = 0; Y < 8; Y++)
-                        {
-                            u8* Col = Row;
-
-                            for(u8 X = 0; X < 8; X++)
-                            {
-                                f32 R = (C_Y[Y][X] + 1.4020F*C_Cr[Y][X] + 128);
-                                f32 G = (C_Y[Y][X] - 0.3441F*C_Cb[Y][X] - 0.71414F*C_Cr[Y][X] + 128);
-                                f32 B = (C_Y[Y][X] + 1.7720F*C_Cb[Y][X] + 128);
-
-                                Col[0] = ClampU8(B);
-                                Col[1] = ClampU8(G);
-                                Col[2] = ClampU8(R);
-                                Col[3] = 0;
-
-                                Col += 4;
-
-                                printf("(%4d,%4d,%4d), ", (int)R, (int)G, (int)B);
-                                // printf("(%4d,%4d,%4d), ", RGB[Y][X][0], RGB[Y][X][1], RGB[Y][X][2]);
-                            }
-                            putchar('\n');
-
-                            Row += Bitmap->Pitch;
-                        }
-                    }
-                }
-
-                Assert(!"Not implemented");
             } break;
         }
     }
@@ -424,6 +329,8 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
 
     jpeg_dqt* DQT[2];
 
+    // TODO: Setting of quality factor!!!
+
     Assert(DQT[0] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(JPEG_STD_DQT_Y)));
     memcpy(DQT[0], JPEG_STD_DQT_Y, sizeof(JPEG_STD_DQT_Y));
 
@@ -482,134 +389,19 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
     SOS->ApproximationBitLow = 0;
     SOS->ApproximationBitHigh = 0;
 
-    u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
-    u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
+    Assert(PushImage(&Buffer, Bitmap, 
+                     &JPEG_STD_DQT_Y[1], &JPEG_STD_DQT_Chroma[1],
+                     &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
+                     &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1]));
 
-    bit_stream BitStream;
-    BitStream.At = Buffer.At;
-    BitStream.Elapsed = Buffer.Elapsed;
-    BitStream.Buf = 0;
-    BitStream.Len = 0;
-
-    i16 DC_Y = 0;
-    i16 DC_Cb = 0;
-    i16 DC_Cr = 0;
-
-    u8* Row = Bitmap->At;
-    for(u16 BlockY = 0; 
-        BlockY < NumBlocksY; 
-        BlockY++)
-    {
-        u8* Col = Row;
-
-        for(u16 BlockX = 0;
-            BlockX < NumBlocksX;
-            BlockX++)
-        {
-            i8 Y[8][8];
-            i8 Cb[8][8];
-            i8 Cr[8][8];
-
-            u8* SubRow = Col;
-            for(u8 SubY = 0;
-                SubY < 8;
-                SubY++)
-            {
-                u8* SubCol = SubRow;
-
-                for(u8 SubX = 0;
-                    SubX < 8;
-                    SubX++)
-                {
-                    u8 B = SubCol[0];
-                    u8 G = SubCol[1];
-                    u8 R = SubCol[2];
-
-                    Y[SubY][SubX]  = (i8)(0.299f*R + 0.587f*G + 0.114f*B - 128);
-                    Cb[SubY][SubX] = (i8)(-0.168736f*R - 0.331264f*G + 0.5f*B);
-                    Cr[SubY][SubX] = (i8)(0.5f*R - 0.418688f*G - 0.081312f*B);
-
-                    SubCol += 4;
-                }
-
-                SubRow += Bitmap->Pitch;
-            }
-
-            Assert(PushPixels(&BitStream, Y, &JPEG_STD_DQT_Y[1], &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1], &DC_Y));
-            Assert(PushPixels(&BitStream, Cb, &JPEG_STD_DQT_Chroma[1], &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1], &DC_Cb));
-            Assert(PushPixels(&BitStream, Cr, &JPEG_STD_DQT_Chroma[1], &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1], &DC_Cr));
-
-            Col += 8 * 4;
-        }
-
-        Row += Bitmap->Pitch * 8;
-    }
 
 #if 1
     memset(Bitmap->At, 0xF0, Bitmap->Size);
 
-    BitStream.At = Buffer.At;
-    BitStream.Elapsed = Buffer.Elapsed;
-    BitStream.Buf = 0;
-    BitStream.Len = 0;
-
-    DC_Y = 0;
-    DC_Cb = 0;
-    DC_Cr = 0;
-
-    Row = Bitmap->At;
-    for(u16 BlockY = 0; 
-        BlockY < NumBlocksY; 
-        BlockY++)
-    {
-        u8* Col = Row;
-
-        for(u16 BlockX = 0;
-            BlockX < NumBlocksX;
-            BlockX++)
-        {
-            i8 Y[8][8];
-            i8 Cb[8][8];
-            i8 Cr[8][8];
-
-            Assert(PopPixels(&BitStream, Y, &JPEG_STD_DQT_Y[1], &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1], &DC_Y));
-            Assert(PopPixels(&BitStream, Cb, &JPEG_STD_DQT_Chroma[1], &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1], &DC_Cb));
-            Assert(PopPixels(&BitStream, Cr, &JPEG_STD_DQT_Chroma[1], &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1], &DC_Cr));
-
-            u8* SubRow = Col;
-            for(u8 SubY = 0;
-                SubY < 8;
-                SubY++)
-            {
-                u8* SubCol = SubRow;
-
-                for(u8 SubX = 0;
-                    SubX < 8;
-                    SubX++)
-                {
-                    u8 Y_value = Y[SubY][SubX] + 128;
-                    i8 Cb_value = Cb[SubY][SubX];
-                    i8 Cr_value = Cr[SubY][SubX];
-
-                    f32 B = Y_value + 1.772F * Cb_value;
-                    f32 G = Y_value - 0.3441F * Cb_value - 0.71414F * Cr_value;
-                    f32 R = Y_value + 1.402F * Cr_value;
-
-                    SubCol[0] = (u8)ClampU8(B);
-                    SubCol[1] = (u8)ClampU8(G);
-                    SubCol[2] = (u8)ClampU8(R);
-
-                    SubCol += 4;
-                }
-
-                SubRow += Bitmap->Pitch;
-            }
-
-            Col += 8 * 4;
-        }
-
-        Row += Bitmap->Pitch * 8;
-    }
+    Assert(PopImage(&Buffer, Bitmap, 
+                    &JPEG_STD_DQT_Y[1], &JPEG_STD_DQT_Chroma[1],
+                    &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
+                    &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1]));  
 
     PlatformShowBitmap(Bitmap, "Bitmap");
 #endif

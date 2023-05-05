@@ -926,16 +926,12 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
     }
 
     i16 PrevDC = *DC;
-
     *DC = Z[0];
-
     Z[0] = Z[0] - PrevDC;
 
     u16 DC_Value;
     u8 DC_Size = EncodeNumber(Z[0], &DC_Value);
-
     Assert(PushSymbol(BitStream, DHT_DC, DC_Size));
-
     if(DC_Size)
     {
         Assert(PushBits(BitStream, DC_Value, DC_Size));
@@ -966,11 +962,8 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
 
         u16 AC_Value;
         u8 AC_Size = EncodeNumber(Z[Idx], &AC_Value);
-
         u8 AC_RS = (AC_RunLength << 4) | AC_Size;
-
         Assert(PushSymbol(BitStream, DHT_AC, AC_RS));
-
         if(AC_Size)
         {
             Assert(PushBits(BitStream, AC_Value, AC_Size));
@@ -985,7 +978,6 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
     i16 Z[64] = {0};
 
     u8 DC_Size;
-
     Assert(PopSymbol(BitStream, DHT_DC, &DC_Size));
 
     u16 DC_Value = 0;
@@ -995,9 +987,7 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
     }
 
     Z[0] = DecodeNumber((u8)DC_Size, DC_Value);
-
     Z[0] += *DC;
-
     *DC = Z[0];
 
     u8 Idx = 1;
@@ -1049,7 +1039,7 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
         }
     }
 
-    f32 D[8][8];
+    i16 D[8][8];
 
     for(u8 Y = 0;
         Y < 8;
@@ -1059,7 +1049,7 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
             X < 8;
             X++)
         {
-            D[Y][X] = (f32)(C[Y][X] * DQT[Y*8+X]);
+            D[Y][X] = (C[Y][X] * DQT[Y*8+X]);
         }
     }
 
@@ -1103,9 +1093,161 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
                 S += Tmp[Y][K] * DCT8x8Table[K][X];
             }
 
-            P[Y][X] = (i8)ClampI8(S);
+            P[Y][X] = ClampI8(S);
         }
     }
+
+    return 1;
+}
+
+static int PushImage(buffer* Buffer, bitmap* Bitmap, 
+                     const u8* DQT_Y, const u8* DQT_Chroma, 
+                     const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
+                     const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC)
+{
+    // TODO: Handling of images other than mod 8
+    u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
+    u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
+
+    bit_stream BitStream;
+    BitStream.At = Buffer->At;
+    BitStream.Elapsed = Buffer->Elapsed;
+    BitStream.Buf = 0;
+    BitStream.Len = 0;
+
+    i16 DC_Y = 0;
+    i16 DC_Cb = 0;
+    i16 DC_Cr = 0;
+
+    u8* Row = Bitmap->At;
+    for(u16 BlockY = 0; 
+        BlockY < NumBlocksY; 
+        BlockY++)
+    {
+        u8* Col = Row;
+
+        for(u16 BlockX = 0;
+            BlockX < NumBlocksX;
+            BlockX++)
+        {
+            i8 Y[8][8];
+            i8 Cb[8][8];
+            i8 Cr[8][8];
+
+            u8* SubRow = Col;
+            for(u8 SubY = 0;
+                SubY < 8;
+                SubY++)
+            {
+                u8* SubCol = SubRow;
+
+                for(u8 SubX = 0;
+                    SubX < 8;
+                    SubX++)
+                {
+                    u8 B = SubCol[0];
+                    u8 G = SubCol[1];
+                    u8 R = SubCol[2];
+
+                    Y[SubY][SubX]  = (i8)(0.299f*R + 0.587f*G + 0.114f*B - 128);
+                    Cb[SubY][SubX] = (i8)(-0.168736f*R - 0.331264f*G + 0.5f*B);
+                    Cr[SubY][SubX] = (i8)(0.5f*R - 0.418688f*G - 0.081312f*B);
+
+                    SubCol += 4;
+                }
+
+                SubRow += Bitmap->Pitch;
+            }
+
+            Assert(PushPixels(&BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+            Assert(PushPixels(&BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
+            Assert(PushPixels(&BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+
+            Col += 8 * 4;
+        }
+
+        Row += Bitmap->Pitch * 8;
+    }
+
+    // TODO: Full flush
+
+    return 1;
+}
+
+static int PopImage(buffer* Buffer, bitmap* Bitmap, 
+                    const u8* DQT_Y, const u8* DQT_Chroma, 
+                    const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
+                    const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC)
+{
+    // TODO: Handling of images other than mod 8
+    u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
+    u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
+
+    bit_stream BitStream;
+    BitStream.At = Buffer->At;
+    BitStream.Elapsed = Buffer->Elapsed;
+    BitStream.Buf = 0;
+    BitStream.Len = 0;
+
+    i16 DC_Y = 0;
+    i16 DC_Cb = 0;
+    i16 DC_Cr = 0;
+
+    u8* Row = Bitmap->At;
+    for(u16 BlockY = 0; 
+        BlockY < NumBlocksY; 
+        BlockY++)
+    {
+        u8* Col = Row;
+
+        for(u16 BlockX = 0;
+            BlockX < NumBlocksX;
+            BlockX++)
+        {
+            i8 Y[8][8];
+            i8 Cb[8][8];
+            i8 Cr[8][8];
+
+            Assert(PopPixels(&BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+            Assert(PopPixels(&BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
+            Assert(PopPixels(&BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+
+            u8* SubRow = Col;
+            for(u8 SubY = 0;
+                SubY < 8;
+                SubY++)
+            {
+                u8* SubCol = SubRow;
+
+                for(u8 SubX = 0;
+                    SubX < 8;
+                    SubX++)
+                {
+                    u8 Y_value = Y[SubY][SubX] + 128;
+                    i8 Cb_value = Cb[SubY][SubX];
+                    i8 Cr_value = Cr[SubY][SubX];
+
+                    f32 B = Y_value + 1.772F * Cb_value;
+                    f32 G = Y_value - 0.3441F * Cb_value - 0.71414F * Cr_value;
+                    f32 R = Y_value + 1.402F * Cr_value;
+
+                    SubCol[0] = (u8)ClampU8(B);
+                    SubCol[1] = (u8)ClampU8(G);
+                    SubCol[2] = (u8)ClampU8(R);
+
+                    SubCol += 4;
+                }
+
+                SubRow += Bitmap->Pitch;
+            }
+
+            Col += 8 * 4;
+        }
+
+        Row += Bitmap->Pitch * 8;
+    }
+
+    // TODO: Ensure EOI
 
     return 1;
 }
