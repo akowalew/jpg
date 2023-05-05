@@ -546,6 +546,8 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
     }
 
 #if 1
+    memset(Bitmap->At, 0xF0, Bitmap->Size);
+
     BitStream.At = Buffer.At;
     BitStream.Elapsed = Buffer.Elapsed;
     BitStream.Buf = 0;
