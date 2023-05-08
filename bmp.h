@@ -26,3 +26,4 @@ typedef struct
 #pragma pack(pop)
 
 int ParseBMP(u8* Data, usz Size, bitmap* Dst);
+void* ExportBMP(bitmap* Bitmap, usz* Size);

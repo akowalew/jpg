@@ -41,19 +41,6 @@
 // Marker: 0xDAFF Length: 0x0008
 // Marker: 0xA6FA Length: 0x0000
 
-// 00 -> 0
-// 010 -> 1
-// 011 -> 2
-// 100 -> 3
-// 101 -> 4
-// 110 -> 5
-// 1110 -> 6
-// 11110 -> 7
-// 111110 -> 8
-// 1111110 -> 9
-// 11111110 -> 10
-// 111111110 -> 11
-
 #define JPEG_COMPONENT_Y 1
 #define JPEG_COMPONENT_Cb 2
 #define JPEG_COMPONENT_Cr 3
@@ -549,7 +536,7 @@ static void* PushSegmentCount(buffer* Buffer, u16 Marker, u16 Length)
     if(PushU16(Buffer, Marker))
     {
         // TODO: u32!
-        if(PushU16(Buffer, ByteSwap16(Length)))
+        if(PushU16(Buffer, ByteSwap16(Length+2)))
         {
             if(Buffer->Elapsed >= Length)
             {

@@ -102,3 +102,8 @@ int ParseBMP(u8* Data, usz Size, bitmap* Dst)
 
     return 1;
 }
+
+void* ExportBMP(bitmap* Bitmap, usz* Size)
+{
+    return 0;
+}
