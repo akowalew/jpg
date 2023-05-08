@@ -104,21 +104,36 @@ typedef struct
 } jpeg_dht;
 #pragma pack(pop)
 
-static u16 JPEG_DHT_GetLength(const jpeg_dht* DHT)
+#pragma pack(push, 1)
+typedef struct
 {
-    u16 Length = 0;
-
-    // TODO: SIMD!!!
-
-    for(u8 Idx = 0;
-        Idx < ArrayCount(DHT->Counts);
-        Idx++)
+    u8 NumComponents; // Number of image components in scan, should be 1, 3, or 4
+    struct
     {
-        Length += DHT->Counts[Idx];
-    }
+        u8 ComponentId; // Index of the image component (1 = Y, 2 = Cb, 3 = Cr, 4 = additional component)
+        union
+        {
+            struct
+            {
+                u8 IndexDC : 4; // High 4 bits: DC entropy coding table index, Low 4 bits: AC entropy coding table index
+                u8 IndexAC : 4; // High 4 bits: DC entropy coding table index, Low 4 bits: AC entropy coding table index
+            };
+            u8 Index;
+        };
+    } Components[3];
+    u8 StartOfSelection; // Spectral selection start (0-63)
+    u8 EndOfSelection; // Spectral selection end (0-63)
+    u8 ApproximationBitLow : 4; // Approximation bit position high and low nibbles
+    u8 ApproximationBitHigh : 4; // Approximation bit position high and low nibbles
+} jpeg_sos;
+#pragma pack(pop)
 
-    return Length;   
-}
+#pragma pack(push, 1)
+typedef struct
+{
+    u16 Marker;
+} jpeg_soi;
+#pragma pack(pop)
 
 typedef struct
 {
@@ -127,117 +142,6 @@ typedef struct
     u32 Buf;
     u8 Len;
 } bit_stream;
-
-static int Refill(bit_stream* BitStream);
-
-static int PopBits(bit_stream* BitStream, u16* Value, u8 Size);
-
-static int PopValue(bit_stream* BitStream, i16* Value, u8 Size)
-{
-    int Result = 0;
-
-    u16 Raw;
-    if(PopBits(BitStream, &Raw, Size))
-    {
-        printf("PopBits(%d): ", Size);
-        for(int I = Size-1;
-            I >= 0;
-            I--)
-        {
-            putchar((BitStream->Buf & (1 << I)) ? '1' : '0');
-        }
-        putchar('\n');
-
-        u16 Thresh = (1 << (Size - 1));
-        if(Raw >= Thresh)
-        {
-            *Value = Raw;
-        }
-        else
-        {
-            *Value = Raw - (2 * Thresh - 1);
-        }
-
-        printf("Value: %d\n", *Value);
-
-        Result = 1;
-    }
-
-    return Result;
-}
-
-static int DecodeSymbol(bit_stream* BitStream, jpeg_dht* DHT, u8* Symbol)
-{
-    int Result = 0;
-
-    if(Refill(BitStream))
-    {
-        u16 Code = 0;
-        u8* At = DHT->Values;
-        printf("DecodeSymbol:\n");
-        for(u8 I = 0; I < 16; I++)
-        {
-            u8 BitLen = I+1;
-            for(u8 J = 0; J < DHT->Counts[I]; J++)
-            {
-                for(int K = 0;
-                    K < BitLen;
-                    K++)
-                {
-                    putchar((Code & (1 << K)) ? '1' : '0');
-                }
-                printf(" -> %d\n", *At);
-
-                Assert(BitStream->Len >= I);
-
-                int Match;
-#if 0
-                u16 Mask = (1 << BitLen) - 1;
-                if((BitStream->Buf & Mask) == Code)
-                {
-                    Match = 1;
-                }
-                else
-                {
-                    Match = 0;
-                }
-#else
-                Match = 1;
-                u32 Mask = 0x1;
-                for(int K = BitLen-1;
-                    K >= 0;
-                    K--)
-                {
-                    int Left = (BitStream->Buf & Mask) != 0;
-                    int Right = (Code & (1 << K)) != 0;
-                    if(Left != Right)
-                    {
-                        Match = 0;
-                    }
-
-                    Mask <<= 1;
-                }
-#endif
-
-                if(Match)
-                {
-                    printf("MATCH!\n");
-                    BitStream->Buf >>= BitLen;
-                    BitStream->Len -= BitLen;
-                    *Symbol = *At;
-                    return 1;
-                }
-
-                Code++;
-                At++;
-            }
-
-            Code <<= 1;
-        }
-    }
-
-    return Result;
-}
 
 static const f32 DCT8x8Table[8][8] = 
 {
@@ -262,67 +166,6 @@ static const f32 tDCT8x8Table[8][8] =
     { +0.3536f, -0.4157f, +0.1913f, +0.0975f, -0.3536f, +0.4904f, -0.4619f, +0.2778f },
     { +0.3536f, -0.4904f, +0.4619f, -0.4157f, +0.3536f, -0.2778f, +0.1913f, -0.0975f },
 };
-
-static void AddScalar8x8(u8* C, i8 K)
-{
-    for(u8 Y = 0; Y < 8; Y++)
-    {
-        for(u8 X = 0; X < 8; X++)
-        {
-            C[Y*8+X] += K;
-
-            printf("%4d, ", C[Y*8+X]);
-        }
-
-        putchar('\n');
-    }
-}
-
-static void IDCT8x8(i16 C[8][8])
-{
-    // tT * R * T
-
-    f32 M[8][8];
-
-    for(u8 Y = 0; Y < 8; Y++)
-    {
-        for(u8 X = 0; X < 8; X++)
-        {
-            f32 S = 0;
-
-            for(u8 K = 0; K < 8; K++)
-            {
-                S += tDCT8x8Table[Y][K] * C[K][X];
-            }
-
-            M[Y][X] = S;
-
-            printf("%10.4f, ", M[Y][X]);
-        }
-        putchar('\n');
-    }
-
-    putchar('\n');
-
-    for(u8 Y = 0; Y < 8; Y++)
-    {
-        for(u8 X = 0; X < 8; X++)
-        {
-            f32 S = 0;
-
-            for(u8 K = 0; K < 8; K++)
-            {
-                S += M[Y][K] * DCT8x8Table[K][X];
-            }
-
-            C[Y][X] = (i8) S;
-
-            printf("%4d, ", C[Y][X]);
-        }
-
-        putchar('\n');
-    }
-}
 
 static inline u8 ClampU8(f32 F)
 {
@@ -356,85 +199,6 @@ static inline i8 ClampI8(f32 F)
     }
 }
 
-static void DecodeMCU(bit_stream* BitStream, i16* C, jpeg_dht* HT_DC, jpeg_dht* HT_AC, i16* DC_Sum, u8 N)
-{
-    u8 DC_Size;
-    Assert(DecodeSymbol(BitStream, HT_DC, &DC_Size));
-
-    i16 DC_Coeff;
-    Assert(PopValue(BitStream, &DC_Coeff, DC_Size));
-    
-    *DC_Sum += DC_Coeff;
-
-    C[0] = *DC_Sum;
-
-    u8 Idx = 1;
-    while(Idx < N)
-    {
-        u8 AC_CountSize;
-        Assert(DecodeSymbol(BitStream, HT_AC, &AC_CountSize));
-        if(AC_CountSize == 0)
-        {
-            printf("EOB occured\n");
-            goto end;
-        }
-        else if(AC_CountSize == 0xF0)
-        {
-            Idx += 16;
-            Assert(Idx <= N);
-            continue;
-        }
-
-        u8 AC_Count = AC_CountSize >> 4;
-        u8 AC_Size = AC_CountSize & 0x0F;
-        printf("AC_Count: %d\n", AC_Count);
-        printf("AC_Size: %d\n", AC_Size);
-
-        i16 AC_Coeff;
-        Assert(PopValue(BitStream, &AC_Coeff, AC_Size));
-
-        Idx += AC_Count;
-        Assert(Idx <= N);
-        if(Idx < N)
-        {
-            C[Idx] = AC_Coeff;
-
-            Idx++;
-        }
-        else
-        {
-            Assert(AC_Size == 0);
-        }
-    }
-
-    // u8 AC_CountSize;
-    // Assert(DecodeSymbol(BitStream, HuffmanTables[JPEG_DHT_CLASS_AC], &AC_CountSize));
-    // Assert(AC_CountSize == 0);
-
-end:
-    printf("Quantized: ");
-    for(Idx = 0;
-        Idx < N;
-        Idx++)
-    {
-        printf("%d, ", C[Idx]);
-    }
-    putchar('\n');
-}
-
-static void ScalarMul8x8(i16 M[8][8], u8* C)
-{
-    for(u8 Y = 0; Y < 8; Y++)
-    {
-        for(u8 X = 0; X < 8; X++)
-        {
-            M[Y][X] *= C[Y*8+X];
-            printf("%4d, ", M[Y][X]);
-        }
-        putchar('\n');
-    }
-}
-
 static const u8 ZigZagTable[8][8] =
 {
     { 0,  1,  5,  6, 14, 15, 27, 28},
@@ -446,55 +210,6 @@ static const u8 ZigZagTable[8][8] =
     {21, 34, 37, 47, 50, 56, 59, 61},
     {35, 36, 48, 49, 57, 58, 62, 63},
 };
-
-static void DeZigZag8x8(i16 Src[64], i16 Dst[8][8])
-{
-    for(u8 Y = 0;
-        Y < 8;
-        Y++)
-    {
-        for(u8 X = 0;
-            X < 8;
-            X++)
-        {
-            u8 Index = ZigZagTable[Y][X];
-            Dst[Y][X] = Src[Index];
-            printf("%4d ", Dst[Y][X]);
-        }
-        putchar('\n');
-    }
-}
-
-#pragma pack(push, 1)
-typedef struct
-{
-    u8 NumComponents; // Number of image components in scan, should be 1, 3, or 4
-    struct
-    {
-        u8 ComponentId; // Index of the image component (1 = Y, 2 = Cb, 3 = Cr, 4 = additional component)
-        union
-        {
-            struct
-            {
-                u8 IndexDC : 4; // High 4 bits: DC entropy coding table index, Low 4 bits: AC entropy coding table index
-                u8 IndexAC : 4; // High 4 bits: DC entropy coding table index, Low 4 bits: AC entropy coding table index
-            };
-            u8 Index;
-        };
-    } Components[3];
-    u8 StartOfSelection; // Spectral selection start (0-63)
-    u8 EndOfSelection; // Spectral selection end (0-63)
-    u8 ApproximationBitLow : 4; // Approximation bit position high and low nibbles
-    u8 ApproximationBitHigh : 4; // Approximation bit position high and low nibbles
-} jpeg_sos;
-#pragma pack(pop)
-
-#pragma pack(push, 1)
-typedef struct
-{
-    u16 Marker;
-} jpeg_soi;
-#pragma pack(pop)
 
 static void* PushBytes(buffer* Buffer, usz Count)
 {

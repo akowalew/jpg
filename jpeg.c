@@ -16,8 +16,8 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
     jpeg_dht* DHT = 0;
     jpeg_sos* SOS = 0;
 
-    u8* QuantizationTables[2] = {0};
-    jpeg_dht* HuffmanTables[2][2] = {0};
+    u8* DQTs[2] = {0};
+    jpeg_dht* DHTs[2][2] = {0};
 
     while(Buffer.Elapsed)
     {
@@ -52,12 +52,12 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 Assert(Length == sizeof(*APP0));
                 APP0 = Payload;
 
-                printf("APP0 version %d.%d\n", APP0->VersionMajor, APP0->VersionMinor);
+                // printf("APP0 version %d.%d\n", APP0->VersionMajor, APP0->VersionMinor);
             } break;
 
             case JPEG_APP1:
             {
-                printf("APP1\n");
+                // printf("APP1\n");
             } break;
 
             case JPEG_DQT:
@@ -65,19 +65,19 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 Assert(Length == sizeof(*DQT));
                 DQT = Payload;
 
-                Assert(DQT->Id < ArrayCount(QuantizationTables));
-                QuantizationTables[DQT->Id] = DQT->Coefficients;
+                Assert(DQT->Id < ArrayCount(DQTs));
+                DQTs[DQT->Id] = DQT->Coefficients;
 
-                printf("Quantization table #%d\n", DQT->Id);
-                for(int I = 0; I < 8; I++)
-                {
-                    for(int J = 0; J < 8; J++)
-                    {
-                        printf("%3d, ", DQT->Coefficients[I*8+J]);
-                    }
+                // printf("Quantization table #%d\n", DQT->Id);
+                // for(int I = 0; I < 8; I++)
+                // {
+                //     for(int J = 0; J < 8; J++)
+                //     {
+                //         printf("%3d, ", DQT->Coefficients[I*8+J]);
+                //     }
 
-                    putchar('\n');
-                }
+                //     putchar('\n');
+                // }
             } break;
 
             case JPEG_SOF0:
@@ -90,14 +90,14 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 SOF0->ImageHeight = ByteSwap16(SOF0->ImageHeight);
                 SOF0->ImageWidth = ByteSwap16(SOF0->ImageWidth);
 
-                printf("Start of frame %dx%d %dbpp\n", SOF0->ImageWidth, SOF0->ImageHeight, SOF0->BitsPerSample);
-                for(int I = 0; I < SOF0->NumComponents; I++)
-                {
-                    printf(" Component#%d: sampling %d:%d table %d\n", I, 
-                        SOF0->Components[I].VerticalSubsamplingFactor, 
-                        SOF0->Components[I].HorizontalSubsamplingFactor,
-                        SOF0->Components[I].QuantizationTableId);
-                }
+                // printf("Start of frame %dx%d %dbpp\n", SOF0->ImageWidth, SOF0->ImageHeight, SOF0->BitsPerSample);
+                // for(int I = 0; I < SOF0->NumComponents; I++)
+                // {
+                //     printf(" Component#%d: sampling %d:%d table %d\n", I, 
+                //         SOF0->Components[I].VerticalSubsamplingFactor, 
+                //         SOF0->Components[I].HorizontalSubsamplingFactor,
+                //         SOF0->Components[I].QuantizationTableId);
+                // }
 
                 Assert(SOF0->NumComponents == 3);
             } break;
@@ -108,24 +108,24 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 DHT = Payload;
                 Length -= sizeof(*DHT);
 
-                printf("Huffman table header %d class %d (%s) id %d\n", DHT->Header, DHT->TableClass, DHT->TableClass ? "AC" : "DC", DHT->TableId);
-                printf("Counts:\n");
+                // printf("Huffman table header %d class %d (%s) id %d\n", DHT->Header, DHT->TableClass, DHT->TableClass ? "AC" : "DC", DHT->TableId);
+                // printf("Counts:\n");
                 usz Total = 0;
                 for(u8 Idx = 0;
                     Idx < ArrayCount(DHT->Counts);
                     Idx++)
                 {
                     Total += DHT->Counts[Idx];
-                    // printf(" %2d: %d codes\n", Idx+1, DHT->Counts[Idx]);
-                    printf(" %d, ", DHT->Counts[Idx]);
+                    // printf(" %d, ", DHT->Counts[Idx]);
                 }
-                putchar('\n');
+                // putchar('\n');
 
                 Assert(Length == Total);
                 u8* HuffmanCodes = DHT->Values;
 
-                printf("Values:\n");
+#if 0
                 u8* At = HuffmanCodes;
+                printf("Values:\n");
                 for(u8 I = 0;
                     I < ArrayCount(DHT->Counts);
                     I++)
@@ -140,11 +140,12 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                     }
                     putchar('\n');
                 }
-
+#endif
                 Assert(DHT->TableClass < 2);
                 Assert(DHT->TableId < 2);
-                HuffmanTables[DHT->TableId][DHT->TableClass] = DHT;
+                DHTs[DHT->TableId][DHT->TableClass] = DHT;
 
+#if 0
                 u16 Code = 0;
                 At = HuffmanCodes;
                 printf("Tree:\n");
@@ -167,6 +168,7 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
 
                     Code <<= 1;
                 }
+#endif
             } break;
 
             case JPEG_SOS:
@@ -175,20 +177,41 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 SOS = Payload;
 
                 Assert(SOS->NumComponents <= ArrayCount(SOS->Components));
-                printf("Start of scan %d components\n", SOS->NumComponents);
-                for(u8 I = 0;
-                    I < SOS->NumComponents;
-                    I++)
-                {
-                    printf(" Component#%d: id %d index %d dc table %d ac table %d\n", I,
-                        SOS->Components[I].ComponentId,
-                        SOS->Components[I].Index,
-                        SOS->Components[I].IndexDC,
-                        SOS->Components[I].IndexAC);
-                }
+                // printf("Start of scan %d components\n", SOS->NumComponents);
+                // for(u8 I = 0;
+                //     I < SOS->NumComponents;
+                //     I++)
+                // {
+                //     printf(" Component#%d: id %d index %d dc table %d ac table %d\n", I,
+                //         SOS->Components[I].ComponentId,
+                //         SOS->Components[I].Index,
+                //         SOS->Components[I].IndexDC,
+                //         SOS->Components[I].IndexAC);
+                // }
 
                 Assert(SOS->NumComponents == 3);
 
+                Bitmap->Width = SOF0->ImageWidth;
+                Bitmap->Height = SOF0->ImageHeight;
+                Bitmap->Pitch = Bitmap->Width * 4;
+                Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
+                Bitmap->At = PlatformAlloc(Bitmap->Size);
+                Assert(Bitmap->At);
+
+                bit_stream BitStream;
+                BitStream.At = Buffer.At;
+                BitStream.Elapsed = Buffer.Elapsed;
+                BitStream.Buf = 0;
+                BitStream.Len = 0;
+
+                Assert(PopImage(&BitStream, Bitmap, 
+                                DQTs[0], DQTs[1],
+                                DHTs[0][0]->Counts, DHTs[0][1]->Counts,
+                                DHTs[1][0]->Counts, DHTs[1][1]->Counts));
+
+                usz BackCount = (BitStream.Len + 7) / 8;
+                Buffer.At = BitStream.At - BackCount;
+                Buffer.Elapsed = BitStream.Elapsed - BackCount;
             } break;
         }
     }
@@ -435,9 +458,9 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
 
     Assert(PushU16(&Buffer, JPEG_EOI));
 
+#if 0
     usz ScanSize = Buffer.At - ScanStart;
 
-#if 1
     BitStream.At = ScanStart;
     BitStream.Elapsed = ScanSize;
     BitStream.Buf = 0;
