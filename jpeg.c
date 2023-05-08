@@ -1,3 +1,538 @@
+static const f32 DCT8x8Table[8][8] = 
+{
+    { +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f },
+    { +0.4904f, +0.4157f, +0.2778f, +0.0975f, -0.0975f, -0.2778f, -0.4157f, -0.4904f },
+    { +0.4619f, +0.1913f, -0.1913f, -0.4619f, -0.4619f, -0.1913f, +0.1913f, +0.4619f },
+    { +0.4157f, -0.0975f, -0.4904f, -0.2778f, +0.2778f, +0.4904f, +0.0975f, -0.4157f },
+    { +0.3536f, -0.3536f, -0.3536f, +0.3536f, +0.3536f, -0.3536f, -0.3536f, +0.3536f },
+    { +0.2778f, -0.4904f, +0.0975f, +0.4157f, -0.4157f, -0.0975f, +0.4904f, -0.2778f },
+    { +0.1913f, -0.4619f, +0.4619f, -0.1913f, -0.1913f, +0.4619f, -0.4619f, +0.1913f },
+    { +0.0975f, -0.2778f, +0.4157f, -0.4904f, +0.4904f, -0.4157f, +0.2778f, -0.0975f },
+};
+
+static const f32 tDCT8x8Table[8][8] = 
+{
+    { +0.3536f, +0.4904f, +0.4619f, +0.4157f, +0.3536f, +0.2778f, +0.1913f, +0.0975f },
+    { +0.3536f, +0.4157f, +0.1913f, -0.0975f, -0.3536f, -0.4904f, -0.4619f, -0.2778f },
+    { +0.3536f, +0.2778f, -0.1913f, -0.4904f, -0.3536f, +0.0975f, +0.4619f, +0.4157f },
+    { +0.3536f, +0.0975f, -0.4619f, -0.2778f, +0.3536f, +0.4157f, -0.1913f, -0.4904f },
+    { +0.3536f, -0.0975f, -0.4619f, +0.2778f, +0.3536f, -0.4157f, -0.1913f, +0.4904f },
+    { +0.3536f, -0.2778f, -0.1913f, +0.4904f, -0.3536f, -0.0975f, +0.4619f, -0.4157f },
+    { +0.3536f, -0.4157f, +0.1913f, +0.0975f, -0.3536f, +0.4904f, -0.4619f, +0.2778f },
+    { +0.3536f, -0.4904f, +0.4619f, -0.4157f, +0.3536f, -0.2778f, +0.1913f, -0.0975f },
+};
+
+static const u8 ZigZagTable[8][8] =
+{
+    { 0,  1,  5,  6, 14, 15, 27, 28},
+    { 2,  4,  7, 13, 16, 26, 29, 42},
+    { 3,  8, 12, 17, 25, 30, 41, 43},
+    { 9, 11, 18, 24, 31, 40, 44, 53},
+    {10, 19, 23, 32, 39, 45, 52, 54},
+    {20, 22, 33, 38, 46, 51, 55, 60},
+    {21, 34, 37, 47, 50, 56, 59, 61},
+    {35, 36, 48, 49, 57, 58, 62, 63},
+};
+
+static u8 EncodeNumber(i16 Number, u16* Value)
+{
+    // TODO: Optimize me please...
+
+    if(Number == 0)
+    {
+        return 0;
+    }
+
+    u32 Raw;
+    if(Number < 0)
+    {
+        Raw = -Number;
+    }
+    else
+    {
+        Raw = Number;
+    }
+
+    u8 Idx;
+    for(Idx = 1;
+        Idx < 16;
+        Idx++)
+    {
+        u32 Top = (1 << Idx);
+        if(Raw < Top)
+        {
+            break;        
+        }  
+    }
+
+    if(Number < 0)
+    {
+        u32 Top = (1 << Idx);
+        *Value = (u16)(Top - Raw - 1);
+    }
+    else
+    {
+        *Value = (u16)(Raw);
+    }
+
+    return Idx;
+}
+
+static i16 DecodeNumber(u8 Size, u16 Value)
+{
+    if(Size == 0)
+    {
+        return 0;
+    }
+
+    u16 Mask = (1 << (Size - 1));
+    if(Value & Mask)
+    {
+        return Value;
+    }
+    else
+    {
+        return -(1 << Size) + Value + 1;
+    }
+}
+
+static int PopSymbol(bit_stream* BitStream, const u8* DHT, u8* Value)
+{
+    Assert(Refill(BitStream));
+
+    const u8* Counts = &DHT[0];
+    const u8* At = &DHT[16];
+
+    u16 Code = 0;
+    for(u8 I = 0; I < 16; I++)
+    {
+        u8 BitLen = I+1;
+
+        Assert(BitStream->Len >= BitLen);
+
+        u16 Mask = (1 << BitLen) - 1;
+        u8 NextLen = (BitStream->Len - BitLen);
+        u16 Compare = (BitStream->Buf >> NextLen) & Mask;
+
+        for(u8 J = 0; J < Counts[I]; J++)
+        {
+            if(Compare == Code)
+            {
+                BitStream->Len = NextLen;
+
+                *Value = *At;
+                return 1;
+            }
+
+            Code++;
+            At++;
+        }
+
+        Code <<= 1;
+    }
+
+    return 0;
+}
+
+static int PushSymbol(bit_stream* BitStream, const u8* DHT, u8 Value)
+{
+    // TODO: Separate push/encode symbol?
+
+    const u8* Counts = &DHT[0];
+    const u8* At = &DHT[16];
+
+    u16 Code = 0;
+    for(u8 I = 0; I < 16; I++)
+    {
+        u8 BitLen = I+1;
+        for(u16 J = 0; J < Counts[I]; J++)
+        {
+            if(*At == Value)
+            {
+                return PushBits(BitStream, Code, BitLen);
+            }
+
+            Code++;
+            At++;
+        }
+
+        Code <<= 1;
+    }
+
+    return 0;
+}
+
+static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+{
+    f32 Tmp[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += DCT8x8Table[Y][K] * P[K][X];
+            }
+
+            Tmp[Y][X] = S;
+        }
+    }
+
+    f32 D[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += Tmp[Y][K] * tDCT8x8Table[K][X];
+            }
+
+            D[Y][X] = S;
+        }
+    }
+
+    i16 Z[64];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            u8 Index = ZigZagTable[Y][X];
+
+            Z[Index] = (i16)D[Y][X];
+        }
+    }
+
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        Z[Idx] /= DQT[Idx];
+    }
+
+    i16 PrevDC = *DC;
+    *DC = Z[0];
+    Z[0] = Z[0] - PrevDC;
+
+    u16 DC_Value;
+    u8 DC_Size = EncodeNumber(Z[0], &DC_Value);
+    Assert(PushSymbol(BitStream, DHT_DC, DC_Size));
+    Assert(PushBits(BitStream, DC_Value, DC_Size));
+
+    for(u8 Idx = 1;
+        Idx < 64;
+        Idx++)
+    {
+        u8 AC_RunLength = 0;
+        while(!Z[Idx])
+        {
+            Idx++;
+            AC_RunLength++;
+            if(Idx == 64)
+            {
+                Assert(PushSymbol(BitStream, DHT_AC, 0x00));
+
+                return 1;
+            }
+            else if(AC_RunLength == 16)
+            {
+                Assert(PushSymbol(BitStream, DHT_AC, 0xF0));
+
+                AC_RunLength = 0;
+            }
+        }
+
+        u16 AC_Value;
+        u8 AC_Size = EncodeNumber(Z[Idx], &AC_Value);
+        u8 AC_RS = (AC_RunLength << 4) | AC_Size;
+        Assert(PushSymbol(BitStream, DHT_AC, AC_RS));
+        Assert(PushBits(BitStream, AC_Value, AC_Size));
+    }
+
+    return 1;
+}
+
+static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+{
+    i16 Z[64] = {0};
+
+    u8 DC_Size;
+    Assert(PopSymbol(BitStream, DHT_DC, &DC_Size));
+
+    u16 DC_Value = 0;
+    if(DC_Size)
+    {
+        Assert(PopBits(BitStream, &DC_Value, DC_Size));
+    }
+
+    Z[0] = DecodeNumber((u8)DC_Size, DC_Value);
+    Z[0] += *DC;
+    *DC = Z[0];
+
+    u8 Idx = 1;
+    while(Idx < 64)
+    {
+        u8 AC_RS = 0;
+        
+        Assert(PopSymbol(BitStream, DHT_AC, &AC_RS));
+
+        if(AC_RS == 0x00)
+        {
+            break;
+        }
+        else if(AC_RS == 0xF0)
+        {
+            Idx += 16;
+            Assert(Idx <= 64);
+            continue;
+        }
+
+        u8 AC_RunLength = (AC_RS >> 4);
+        u8 AC_Size = AC_RS & 0xF;
+        Assert(AC_Size);
+
+        Idx += AC_RunLength;
+        Assert(Idx < 64);
+
+        u16 AC_Value;
+        Assert(PopBits(BitStream, &AC_Value, AC_Size));
+
+        Z[Idx] = DecodeNumber(AC_Size, AC_Value);
+
+        Idx++;
+    }
+
+    for(Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        Z[Idx] *= DQT[Idx];
+    }
+
+    i16 C[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            u8 Index = ZigZagTable[Y][X];
+
+            C[Y][X] = Z[Index];
+        }
+    }
+
+    f32 Tmp[8][8];
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += tDCT8x8Table[Y][K] * C[K][X];
+            }
+
+            Tmp[Y][X] = S;
+        }
+    }
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X++)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += Tmp[Y][K] * DCT8x8Table[K][X];
+            }
+
+            P[Y][X] = (i8) CLAMP(S, -127, 128);
+        }
+    }
+
+    return 1;
+}
+
+static int PushImage(bit_stream* BitStream, bitmap* Bitmap, 
+                     const u8* DQT_Y, const u8* DQT_Chroma, 
+                     const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
+                     const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC)
+{
+    // TODO: Handling of images other than mod 8
+    u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
+    u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
+
+    i16 DC_Y = 0;
+    i16 DC_Cb = 0;
+    i16 DC_Cr = 0;
+
+    u8* Row = Bitmap->At;
+    for(u16 BlockY = 0; 
+        BlockY < NumBlocksY; 
+        BlockY++)
+    {
+        u8* Col = Row;
+
+        for(u16 BlockX = 0;
+            BlockX < NumBlocksX;
+            BlockX++)
+        {
+            i8 Y[8][8];
+            i8 Cb[8][8];
+            i8 Cr[8][8];
+
+            u8* SubRow = Col;
+            for(u8 SubY = 0;
+                SubY < 8;
+                SubY++)
+            {
+                u8* SubCol = SubRow;
+
+                for(u8 SubX = 0;
+                    SubX < 8;
+                    SubX++)
+                {
+                    u8 B = SubCol[0];
+                    u8 G = SubCol[1];
+                    u8 R = SubCol[2];
+
+                    Y[SubY][SubX]  = (i8)(0.299f*R + 0.587f*G + 0.114f*B - 128);
+                    Cb[SubY][SubX] = (i8)(-0.168736f*R - 0.331264f*G + 0.5f*B);
+                    Cr[SubY][SubX] = (i8)(0.5f*R - 0.418688f*G - 0.081312f*B);
+
+                    SubCol += 4;
+                }
+
+                SubRow += Bitmap->Pitch;
+            }
+
+            // TODO: Subsampling
+            Assert(PushPixels(BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+            Assert(PushPixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
+            Assert(PushPixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+
+            Col += 8 * 4;
+        }
+
+        Row += Bitmap->Pitch * 8;
+    }
+
+    return 1;
+}
+
+static int PopImage(bit_stream* BitStream, bitmap* Bitmap, 
+                    const u8* DQT_Y, const u8* DQT_Chroma, 
+                    const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
+                    const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC)
+{
+    // TODO: Handling of images other than mod 8
+    u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
+    u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
+
+    i16 DC_Y = 0;
+    i16 DC_Cb = 0;
+    i16 DC_Cr = 0;
+
+    u8* Row = Bitmap->At;
+    for(u16 BlockY = 0; 
+        BlockY < NumBlocksY; 
+        BlockY++)
+    {
+        u8* Col = Row;
+
+        for(u16 BlockX = 0;
+            BlockX < NumBlocksX;
+            BlockX++)
+        {
+            i8 Y[8][8];
+            i8 Cb[8][8];
+            i8 Cr[8][8];
+
+            // TODO: Subsampling
+            Assert(PopPixels(BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+            Assert(PopPixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
+            Assert(PopPixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+
+            u8* SubRow = Col;
+            for(u8 SubY = 0;
+                SubY < 8;
+                SubY++)
+            {
+                u8* SubCol = SubRow;
+
+                for(u8 SubX = 0;
+                    SubX < 8;
+                    SubX++)
+                {
+                    u8 Y_value = Y[SubY][SubX] + 128;
+                    i8 Cb_value = Cb[SubY][SubX];
+                    i8 Cr_value = Cr[SubY][SubX];
+
+                    f32 B = Y_value + 1.772F * Cb_value;
+                    f32 G = Y_value - 0.3441F * Cb_value - 0.71414F * Cr_value;
+                    f32 R = Y_value + 1.402F * Cr_value;
+
+                    SubCol[0] = (u8) CLAMP(B, 0, 255);
+                    SubCol[1] = (u8) CLAMP(G, 0, 255);
+                    SubCol[2] = (u8) CLAMP(R, 0, 255);
+
+                    SubCol += 4;
+                }
+
+                SubRow += Bitmap->Pitch;
+            }
+
+            Col += 8 * 4;
+        }
+
+        Row += Bitmap->Pitch * 8;
+    }
+
+    return 1;
+}
+
 static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
 {
     buffer Buffer;
@@ -69,17 +604,6 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
 
                 Assert(DQT->Id < ArrayCount(DQTs));
                 DQTs[DQT->Id] = DQT->Coefficients;
-
-                // printf("Quantization table #%d\n", DQT->Id);
-                // for(int I = 0; I < 8; I++)
-                // {
-                //     for(int J = 0; J < 8; J++)
-                //     {
-                //         printf("%3d, ", DQT->Coefficients[I*8+J]);
-                //     }
-
-                //     putchar('\n');
-                // }
             } break;
 
             case JPEG_SOF0:
@@ -88,19 +612,8 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 SOF0 = Payload;
 
                 Assert(SOF0->NumComponents <= ArrayCount(SOF0->Components));
-
                 SOF0->ImageHeight = ByteSwap16(SOF0->ImageHeight);
                 SOF0->ImageWidth = ByteSwap16(SOF0->ImageWidth);
-
-                // printf("Start of frame %dx%d %dbpp\n", SOF0->ImageWidth, SOF0->ImageHeight, SOF0->BitsPerSample);
-                // for(int I = 0; I < SOF0->NumComponents; I++)
-                // {
-                //     printf(" Component#%d: sampling %d:%d table %d\n", I, 
-                //         SOF0->Components[I].VerticalSubsamplingFactor, 
-                //         SOF0->Components[I].HorizontalSubsamplingFactor,
-                //         SOF0->Components[I].QuantizationTableId);
-                // }
-
                 Assert(SOF0->NumComponents == 3);
             } break;
 
@@ -110,67 +623,20 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 DHT = Payload;
                 Length -= sizeof(*DHT);
 
-                // printf("Huffman table header %d class %d (%s) id %d\n", DHT->Header, DHT->TableClass, DHT->TableClass ? "AC" : "DC", DHT->TableId);
-                // printf("Counts:\n");
                 usz Total = 0;
                 for(u8 Idx = 0;
                     Idx < ArrayCount(DHT->Counts);
                     Idx++)
                 {
                     Total += DHT->Counts[Idx];
-                    // printf(" %d, ", DHT->Counts[Idx]);
                 }
-                // putchar('\n');
 
                 Assert(Length == Total);
                 u8* HuffmanCodes = DHT->Values;
 
-#if 0
-                u8* At = HuffmanCodes;
-                printf("Values:\n");
-                for(u8 I = 0;
-                    I < ArrayCount(DHT->Counts);
-                    I++)
-                {
-                    u8 Count = DHT->Counts[I];
-                    // printf(" %2d: ", I+1);
-                    for(u8 J = 0;
-                        J < Count;
-                        J++)
-                    {
-                        printf("%d, ", *(At++));
-                    }
-                    putchar('\n');
-                }
-#endif
                 Assert(DHT->TableClass < 2);
                 Assert(DHT->TableId < 2);
                 DHTs[DHT->TableId][DHT->TableClass] = DHT;
-
-#if 0
-                u16 Code = 0;
-                At = HuffmanCodes;
-                printf("Tree:\n");
-                for(u8 I = 0; I < 16; I++)
-                {
-                    u8 BitLen = I+1;
-                    for(u8 J = 0; J < DHT->Counts[I]; J++)
-                    {
-                        for(int K = 0;
-                            K < BitLen;
-                            K++)
-                        {
-                            putchar((Code & (1 << K)) ? '1' : '0');
-                        }
-                        printf(" -> %d\n", *At);
-
-                        Code++;
-                        At++;
-                    }
-
-                    Code <<= 1;
-                }
-#endif
             } break;
 
             case JPEG_SOS:
@@ -179,18 +645,6 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
                 SOS = Payload;
 
                 Assert(SOS->NumComponents <= ArrayCount(SOS->Components));
-                // printf("Start of scan %d components\n", SOS->NumComponents);
-                // for(u8 I = 0;
-                //     I < SOS->NumComponents;
-                //     I++)
-                // {
-                //     printf(" Component#%d: id %d index %d dc table %d ac table %d\n", I,
-                //         SOS->Components[I].ComponentId,
-                //         SOS->Components[I].Index,
-                //         SOS->Components[I].IndexDC,
-                //         SOS->Components[I].IndexAC);
-                // }
-
                 Assert(SOS->NumComponents == 3);
 
                 Bitmap->Width = SOF0->ImageWidth;
