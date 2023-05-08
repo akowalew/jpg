@@ -183,21 +183,7 @@ static inline u8 ClampU8(f32 F)
     }
 }
 
-static inline i8 ClampI8(f32 F)
-{
-    if(F >= 127)
-    {
-        return 127;
-    }
-    else if(F <= -128)
-    {
-        return -128;
-    }
-    else
-    {
-        return (i8)F;
-    }
-}
+#define CLAMP(X, Lo, Hi) ((X) <= (Lo) ? (Lo) : ((X) >= (Hi) ? (Hi) : (X)))
 
 static const u8 ZigZagTable[8][8] =
 {
@@ -444,7 +430,11 @@ static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
 {
     int Result = 0;
 
-    Assert(Size);
+    if(!Size)
+    {
+        return 1;
+    }
+
     Assert(Size <= sizeof(Value)*8);
 
     if(Flush(BitStream))
@@ -472,7 +462,6 @@ static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
 static int PopSymbol(bit_stream* BitStream, const u8* DHT, u8* Value)
 {
     Assert(Refill(BitStream));
-    Assert(BitStream->Len > 16);
 
     const u8* Counts = &DHT[0];
     const u8* At = &DHT[16];
@@ -481,6 +470,8 @@ static int PopSymbol(bit_stream* BitStream, const u8* DHT, u8* Value)
     for(u8 I = 0; I < 16; I++)
     {
         u8 BitLen = I+1;
+
+        Assert(BitStream->Len >= BitLen);
 
         u16 Mask = (1 << BitLen) - 1;
         u8 NextLen = (BitStream->Len - BitLen);
@@ -595,20 +586,6 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
         }
     }
 
-    // i16 C[8][8];
-
-    // for(u8 Y = 0;
-    //     Y < 8;
-    //     Y++)
-    // {
-    //     for(u8 X = 0;
-    //         X < 8;
-    //         X++)
-    //     {
-    //         C[Y][X] = (i16)(D[Y][X] / DQT[Y*8+X]);
-    //     }
-    // }
-
     i16 Z[64];
 
     for(u8 Y = 0;
@@ -639,10 +616,7 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
     u16 DC_Value;
     u8 DC_Size = EncodeNumber(Z[0], &DC_Value);
     Assert(PushSymbol(BitStream, DHT_DC, DC_Size));
-    if(DC_Size)
-    {
-        Assert(PushBits(BitStream, DC_Value, DC_Size));
-    }
+    Assert(PushBits(BitStream, DC_Value, DC_Size));
 
     for(u8 Idx = 1;
         Idx < 64;
@@ -671,10 +645,7 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
         u8 AC_Size = EncodeNumber(Z[Idx], &AC_Value);
         u8 AC_RS = (AC_RunLength << 4) | AC_Size;
         Assert(PushSymbol(BitStream, DHT_AC, AC_RS));
-        if(AC_Size)
-        {
-            Assert(PushBits(BitStream, AC_Value, AC_Size));
-        }
+        Assert(PushBits(BitStream, AC_Value, AC_Size));
     }
 
     return 1;
@@ -793,7 +764,7 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
                 S += Tmp[Y][K] * DCT8x8Table[K][X];
             }
 
-            P[Y][X] = ClampI8(S);
+            P[Y][X] = (i8) CLAMP(S, -127, 128);
         }
     }
 
@@ -919,9 +890,9 @@ static int PopImage(bit_stream* BitStream, bitmap* Bitmap,
                     f32 G = Y_value - 0.3441F * Cb_value - 0.71414F * Cr_value;
                     f32 R = Y_value + 1.402F * Cr_value;
 
-                    SubCol[0] = (u8)ClampU8(B);
-                    SubCol[1] = (u8)ClampU8(G);
-                    SubCol[2] = (u8)ClampU8(R);
+                    SubCol[0] = (u8) CLAMP(B, 0, 255);
+                    SubCol[1] = (u8) CLAMP(G, 0, 255);
+                    SubCol[2] = (u8) CLAMP(R, 0, 255);
 
                     SubCol += 4;
                 }
@@ -939,4 +910,4 @@ static int PopImage(bit_stream* BitStream, bitmap* Bitmap,
 }
 
 static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap);
-static void* ExportJPEG(bitmap* Bitmap, usz* Size);
+static void* ExportJPEG(bitmap* Bitmap, usz* Size, u8 Quality);

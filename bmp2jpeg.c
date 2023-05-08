@@ -12,7 +12,7 @@ int main(int Argc, char** Argv)
 {
     if(Argc < 3)
     {
-        fprintf(stderr, "Syntax: %s <InputFile> <OutputFile>\n", Argv[0]);
+        fprintf(stderr, "Syntax: %s <InputFile> <OutputFile> [Quality=50]\n", Argv[0]);
         return EXIT_FAILURE;
     }
 
@@ -38,8 +38,14 @@ int main(int Argc, char** Argv)
     PlatformShowBitmap(&Bitmap, "BMP");
 #endif
     
+    u8 Quality = 50;
+    if(Argc >= 4)
+    {
+        Quality = (u8) atoi(Argv[3]);
+    }
+
     usz OutputSize;
-    void* OutputData = ExportJPEG(&Bitmap, &OutputSize);
+    void* OutputData = ExportJPEG(&Bitmap, &OutputSize, Quality);
     if(!OutputData)
     {
         fprintf(stderr, "Failed to export JPEG\n");

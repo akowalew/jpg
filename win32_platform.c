@@ -49,7 +49,7 @@ int PlatformWriteEntireFile(const char* Name, void* Data, usz Size)
     Assert(Size < 0xFFFFFFFF);
     DWORD BytesToWrite = (DWORD) Size;
 
-    HANDLE FileHandle = CreateFileA(Name, GENERIC_WRITE, 0, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+    HANDLE FileHandle = CreateFileA(Name, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
     if(FileHandle != INVALID_HANDLE_VALUE)
     {
         if(WriteFile(FileHandle, Data, BytesToWrite, 0, 0))
@@ -147,64 +147,3 @@ int PlatformShowBitmap(bitmap* Bitmap, const char* Title)
 
     return (int) Message.wParam;
 }
-
-// static void FillRectangle(bitmap* Bitmap, int X1, int Y1, int X2, int Y2, u32 Color)
-// {
-//     u8* Row = Bitmap->At + Y1*Bitmap->Pitch + X1*4;
-//     for(int Y = Y1;
-//         Y <= Y2;
-//         Y++)
-//     {
-//         u8* Col = Row;
-        
-//         for(int X = X1;
-//             X <= X2;
-//             X++)
-//         {
-//             *(u32*)(Col) = Color;
-
-//             Col += 4;
-//         }   
-
-//         Row += Bitmap->Pitch;
-//     }
-// }
-
-// int main(int Argc, char** Argv)
-// {
-// #if 0
-//     bitmap Example;
-//     Example.Width = 100;
-//     Example.Height = 100;
-//     Example.Pitch = Example.Width * 4;
-//     Example.Size = Example.Pitch * Example.Height;
-//     Example.At = PlatformAlloc(Example.Size);
-//     FillRectangle(&Example, 0, 0, 31, 31, 0x000000FF);
-//     PlatformShowBitmap(&Example, "example");
-// #endif
-
-//     if(Argc < 2)
-//     {
-//         fprintf(stderr, "Syntax: %s <FileName>\n", Argv[0]);
-//         return EXIT_FAILURE;
-//     }
-
-//     char* FileName = Argv[1];
-
-//     usz FileSize;
-//     void* FileData = PlatformReadEntireFile(FileName, &FileSize);
-//     if(!FileData)
-//     {
-//         fprintf(stderr, "Failed to read file\n");
-//         return EXIT_FAILURE;
-//     }
-
-//     bitmap Bitmap;
-//     if(!ParseJPEG(FileData, FileSize, &Bitmap))
-//     {
-//         fprintf(stderr, "Failed to parse JPEG\n");
-//         return EXIT_FAILURE;
-//     }
-
-//     return EXIT_SUCCESS;
-// }

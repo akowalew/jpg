@@ -221,56 +221,50 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
     return 1;
 }
 
-static const u8 JPEG_STD_DQT_Y[1 + 64] = 
+static const u8 JPEG_STD_Y_Q50[64] = 
 {
-    // Id
-    0,
-
-    // Coefficients (in zig-zag order)
-     3,   2,   2,   3,   2,   2,   3,   3,
-     3,   3,   4,   3,   3,   4,   5,   8,
-     5,   5,   4,   4,   5,  10,   7,   7,
-     6,   8,  12,  10,  12,  12,  11,  10,
-    11,  11,  13,  14,  18,  16,  13,  14,
-    17,  14,  11,  11,  16,  22,  16,  17,
-    19,  20,  21,  21,  21,  12,  15,  23,
-    24,  22,  20,  24,  18,  20,  21,  20,
-
+    // Coefficients (Zig-Zag order)
+     16,  11,  12,  14,  12,  10,  16,  14,
+     13,  14,  18,  17,  16,  19,  24,  40,
+     26,  24,  22,  22,  24,  49,  35,  37,
+     29,  40,  58,  51,  61,  60,  57,  51,
+     56,  55,  64,  72,  92,  78,  64,  68,
+     87,  69,  55,  56,  80, 109,  81,  87,
+     95,  98, 103, 104, 103,  62,  77, 113,
+    121, 112, 100, 120,  92, 101, 103,  99,
 
     // Coefficients (2D order)
-    //  3,   2,   2,   3,   5,   8,  10,  12,
-    //  2,   2,   3,   4,   5,  12,  12,  11,
-    //  3,   3,   3,   5,   8,  11,  14,  11,
-    //  3,   3,   4,   6,  10,  17,  16,  12,
-    //  4,   4,   7,  11,  14,  22,  21,  15,
-    //  5,   7,  11,  13,  16,  21,  23,  18,
-    // 10,  13,  16,  17,  21,  24,  24,  20,
-    // 14,  18,  19,  20,  22,  20,  21,  20,
+    // 16,  11,  10,  16,  24,  40,  51,  61,
+    // 12,  12,  14,  19,  26,  58,  60,  55,
+    // 14,  13,  16,  24,  40,  57,  69,  56,
+    // 14,  17,  22,  29,  51,  87,  80,  62,
+    // 18,  22,  37,  56,  68, 109, 103,  77,
+    // 24,  35,  55,  64,  81, 104, 113,  92,
+    // 49,  64,  78,  87, 103, 121, 120, 101,
+    // 72,  92,  95,  98, 112, 100, 103,  99,
 };
 
-static const u8 JPEG_STD_DQT_Chroma[1 + 64] =
+static const u8 JPEG_STD_Chroma_Q50[64] =
 {
-    // Id,
-    1,
+    // Coefficients (Zig-Zag order)
+     17,  18,  18,  24,  21,  24,  47,  26,
+     26,  47,  99,  66,  56,  66,  99,  99,
+     99,  99,  99,  99,  99,  99,  99,  99,
+     99,  99,  99,  99,  99,  99,  99,  99,
+     99,  99,  99,  99,  99,  99,  99,  99,
+     99,  99,  99,  99,  99,  99,  99,  99,
+     99,  99,  99,  99,  99,  99,  99,  99,
+     99,  99,  99,  99,  99,  99,  99,  99,
 
-    // Coefficients
-      3,   4,   4,   5,   4,   5,   9,   5,
-      5,   9,  20,  13,  11,  13,  20,  20,
-     20,  20,  20,  20,  20,  20,  20,  20,
-     20,  20,  20,  20,  20,  20,  20,  20,
-     20,  20,  20,  20,  20,  20,  20,  20,
-     20,  20,  20,  20,  20,  20,  20,  20,
-     20,  20,  20,  20,  20,  20,  20,  20,
-     20,  20,  20,  20,  20,  20,  20,  20,
-
-     //  3,   4,   5,   9,  20,  20,  20,  20,
-     //  4,   4,   5,  13,  20,  20,  20,  20,
-     //  5,   5,  11,  20,  20,  20,  20,  20,
-     //  9,  13,  20,  20,  20,  20,  20,  20,
-     // 20,  20,  20,  20,  20,  20,  20,  20,
-     // 20,  20,  20,  20,  20,  20,  20,  20,
-     // 20,  20,  20,  20,  20,  20,  20,  20,
-     // 20,  20,  20,  20,  20,  20,  20,  20,
+    // Coefficients (2D order)
+    // 17,  18,  24,  47,  99,  99,  99,  99,
+    // 18,  21,  26,  66,  99,  99,  99,  99,
+    // 24,  26,  56,  99,  99,  99,  99,  99,
+    // 47,  66,  99,  99,  99,  99,  99,  99,
+    // 99,  99,  99,  99,  99,  99,  99,  99,
+    // 99,  99,  99,  99,  99,  99,  99,  99,
+    // 99,  99,  99,  99,  99,  99,  99,  99,
+    // 99,  99,  99,  99,  99,  99,  99,  99,
 };
 
 static const u8 JPEG_STD_DHT00[] =
@@ -341,7 +335,7 @@ static const u8 JPEG_STD_DHT11[] =
     0xF9, 0xFA,
 };
 
-static void* ExportJPEG(bitmap* Bitmap, usz* Size)
+static void* ExportJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 {
     Assert(Bitmap->Width < 65536);
     Assert(Bitmap->Height < 65536);
@@ -376,13 +370,30 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
 
     jpeg_dqt* DQT[2];
 
-    // TODO: Setting of quality factor!!!
+    Quality = CLAMP(Quality, 1, 100);
+    float Ratio = (Quality <= 50) ? (50.F / Quality) : ((100.F - Quality) / 50);
 
-    Assert(DQT[0] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(JPEG_STD_DQT_Y)));
-    memcpy(DQT[0], JPEG_STD_DQT_Y, sizeof(JPEG_STD_DQT_Y));
+    Assert(DQT[0] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
+    DQT[0]->Id = 0;
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        float Coeff = (JPEG_STD_Y_Q50[Idx] * Ratio);
 
-    Assert(DQT[1] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(JPEG_STD_DQT_Chroma)));
-    memcpy(DQT[1], JPEG_STD_DQT_Chroma, sizeof(JPEG_STD_DQT_Chroma));
+        DQT[0]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
+    }
+
+    Assert(DQT[1] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
+    DQT[1]->Id = 1;
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        float Coeff = (JPEG_STD_Chroma_Q50[Idx] * Ratio);
+
+        DQT[1]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
+    }
 
     jpeg_sof0* SOF0;
 
@@ -436,16 +447,18 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
     SOS->ApproximationBitLow = 0;
     SOS->ApproximationBitHigh = 0;
 
-    u8* ScanStart = Buffer.At;
-
     bit_stream BitStream;
     BitStream.At = Buffer.At;
     BitStream.Elapsed = Buffer.Elapsed;
     BitStream.Buf = 0;
     BitStream.Len = 0;
 
+#if 0
+    bit_stream Orig = BitStream;
+#endif
+
     Assert(PushImage(&BitStream, Bitmap, 
-                     &JPEG_STD_DQT_Y[1], &JPEG_STD_DQT_Chroma[1],
+                     DQT[0]->Coefficients, DQT[1]->Coefficients,
                      &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
                      &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1]));
 
@@ -455,28 +468,21 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
     Assert(PushBits(&BitStream, Zero, ZeroCount));
     Assert(Flush(&BitStream));
 
-    Buffer.At = BitStream.At;
-    Buffer.Elapsed = BitStream.Elapsed;
-
-    Assert(PushU16(&Buffer, JPEG_EOI));
-
 #if 0
-    usz ScanSize = Buffer.At - ScanStart;
-
-    BitStream.At = ScanStart;
-    BitStream.Elapsed = ScanSize;
-    BitStream.Buf = 0;
-    BitStream.Len = 0;
-
     memset(Bitmap->At, 0xF0, Bitmap->Size);
 
-    Assert(PopImage(&BitStream, Bitmap, 
-                    &JPEG_STD_DQT_Y[1], &JPEG_STD_DQT_Chroma[1],
+    Assert(PopImage(&Orig, Bitmap, 
+                    DQT[0]->Coefficients, DQT[1]->Coefficients,
                     &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
                     &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1]));  
 
     PlatformShowBitmap(Bitmap, "Bitmap");
 #endif
+
+    Buffer.At = BitStream.At;
+    Buffer.Elapsed = BitStream.Elapsed;
+
+    Assert(PushU16(&Buffer, JPEG_EOI));
 
     *Size = Buffer.At - BufferStart;
 
