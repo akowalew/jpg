@@ -652,7 +652,8 @@ static u16 ReverseBits16(u16 Value)
 static int Refill(bit_stream* BitStream)
 {
     u8 BytesCount = (32 - BitStream->Len) / 8;
-    Assert(BitStream->Elapsed > BytesCount);
+    
+    BytesCount = (u8) Min(BitStream->Elapsed, BytesCount);
 
     for(u8 ByteIdx = 0;
         ByteIdx < BytesCount;
@@ -664,7 +665,6 @@ static int Refill(bit_stream* BitStream)
         {
             u8 NextByte = *(BitStream->At++);
             BitStream->Elapsed--;
-            Assert(NextByte == 0x00);
         }
 
 #if 0
@@ -679,8 +679,6 @@ static int Refill(bit_stream* BitStream)
 
     return 1;
 }
-
-
 
 static int Flush(bit_stream* BitStream)
 {
@@ -895,19 +893,19 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
         }
     }
 
-    i16 C[8][8];
+    // i16 C[8][8];
 
-    for(u8 Y = 0;
-        Y < 8;
-        Y++)
-    {
-        for(u8 X = 0;
-            X < 8;
-            X++)
-        {
-            C[Y][X] = (i16)(D[Y][X] / DQT[Y*8+X]);
-        }
-    }
+    // for(u8 Y = 0;
+    //     Y < 8;
+    //     Y++)
+    // {
+    //     for(u8 X = 0;
+    //         X < 8;
+    //         X++)
+    //     {
+    //         C[Y][X] = (i16)(D[Y][X] / DQT[Y*8+X]);
+    //     }
+    // }
 
     i16 Z[64];
 
@@ -921,8 +919,15 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
         {
             u8 Index = ZigZagTable[Y][X];
 
-            Z[Index] = C[Y][X];
+            Z[Index] = (i16)D[Y][X];
         }
+    }
+
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        Z[Idx] /= DQT[Idx];
     }
 
     i16 PrevDC = *DC;
@@ -1022,7 +1027,14 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
 
         Idx++;
     }
-    
+
+    for(Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        Z[Idx] *= DQT[Idx];
+    }
+
     i16 C[8][8];
 
     for(u8 Y = 0;
@@ -1036,20 +1048,6 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
             u8 Index = ZigZagTable[Y][X];
 
             C[Y][X] = Z[Index];
-        }
-    }
-
-    i16 D[8][8];
-
-    for(u8 Y = 0;
-        Y < 8;
-        Y++)
-    {
-        for(u8 X = 0;
-            X < 8;
-            X++)
-        {
-            D[Y][X] = (C[Y][X] * DQT[Y*8+X]);
         }
     }
 
@@ -1069,7 +1067,7 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
                 K < 8;
                 K++)
             {
-                S += tDCT8x8Table[Y][K] * D[K][X];
+                S += tDCT8x8Table[Y][K] * C[K][X];
             }
 
             Tmp[Y][X] = S;
@@ -1100,7 +1098,7 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
     return 1;
 }
 
-static int PushImage(buffer* Buffer, bitmap* Bitmap, 
+static int PushImage(bit_stream* BitStream, bitmap* Bitmap, 
                      const u8* DQT_Y, const u8* DQT_Chroma, 
                      const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
                      const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC)
@@ -1108,12 +1106,6 @@ static int PushImage(buffer* Buffer, bitmap* Bitmap,
     // TODO: Handling of images other than mod 8
     u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
     u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
-
-    bit_stream BitStream;
-    BitStream.At = Buffer->At;
-    BitStream.Elapsed = Buffer->Elapsed;
-    BitStream.Buf = 0;
-    BitStream.Len = 0;
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;
@@ -1159,9 +1151,10 @@ static int PushImage(buffer* Buffer, bitmap* Bitmap,
                 SubRow += Bitmap->Pitch;
             }
 
-            Assert(PushPixels(&BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
-            Assert(PushPixels(&BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
-            Assert(PushPixels(&BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+            // TODO: Subsampling
+            Assert(PushPixels(BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+            Assert(PushPixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
+            Assert(PushPixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
 
             Col += 8 * 4;
         }
@@ -1169,12 +1162,10 @@ static int PushImage(buffer* Buffer, bitmap* Bitmap,
         Row += Bitmap->Pitch * 8;
     }
 
-    // TODO: Full flush
-
     return 1;
 }
 
-static int PopImage(buffer* Buffer, bitmap* Bitmap, 
+static int PopImage(bit_stream* BitStream, bitmap* Bitmap, 
                     const u8* DQT_Y, const u8* DQT_Chroma, 
                     const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
                     const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC)
@@ -1182,12 +1173,6 @@ static int PopImage(buffer* Buffer, bitmap* Bitmap,
     // TODO: Handling of images other than mod 8
     u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
     u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
-
-    bit_stream BitStream;
-    BitStream.At = Buffer->At;
-    BitStream.Elapsed = Buffer->Elapsed;
-    BitStream.Buf = 0;
-    BitStream.Len = 0;
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;
@@ -1208,9 +1193,10 @@ static int PopImage(buffer* Buffer, bitmap* Bitmap,
             i8 Cb[8][8];
             i8 Cr[8][8];
 
-            Assert(PopPixels(&BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
-            Assert(PopPixels(&BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
-            Assert(PopPixels(&BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+            // TODO: Subsampling
+            Assert(PopPixels(BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+            Assert(PopPixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
+            Assert(PopPixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
 
             u8* SubRow = Col;
             for(u8 SubY = 0;
@@ -1246,8 +1232,6 @@ static int PopImage(buffer* Buffer, bitmap* Bitmap,
 
         Row += Bitmap->Pitch * 8;
     }
-
-    // TODO: Ensure EOI
 
     return 1;
 }

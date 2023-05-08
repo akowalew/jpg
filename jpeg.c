@@ -201,7 +201,7 @@ static const u8 JPEG_STD_DQT_Y[1 + 64] =
     // Id
     0,
 
-    // Coefficients
+    // Coefficients (in zig-zag order)
      3,   2,   2,   3,   2,   2,   3,   3,
      3,   3,   4,   3,   3,   4,   5,   8,
      5,   5,   4,   4,   5,  10,   7,   7,
@@ -210,6 +210,17 @@ static const u8 JPEG_STD_DQT_Y[1 + 64] =
     17,  14,  11,  11,  16,  22,  16,  17,
     19,  20,  21,  21,  21,  12,  15,  23,
     24,  22,  20,  24,  18,  20,  21,  20,
+
+
+    // Coefficients (2D order)
+    //  3,   2,   2,   3,   5,   8,  10,  12,
+    //  2,   2,   3,   4,   5,  12,  12,  11,
+    //  3,   3,   3,   5,   8,  11,  14,  11,
+    //  3,   3,   4,   6,  10,  17,  16,  12,
+    //  4,   4,   7,  11,  14,  22,  21,  15,
+    //  5,   7,  11,  13,  16,  21,  23,  18,
+    // 10,  13,  16,  17,  21,  24,  24,  20,
+    // 14,  18,  19,  20,  22,  20,  21,  20,
 };
 
 static const u8 JPEG_STD_DQT_Chroma[1 + 64] =
@@ -226,6 +237,15 @@ static const u8 JPEG_STD_DQT_Chroma[1 + 64] =
      20,  20,  20,  20,  20,  20,  20,  20,
      20,  20,  20,  20,  20,  20,  20,  20,
      20,  20,  20,  20,  20,  20,  20,  20,
+
+     //  3,   4,   5,   9,  20,  20,  20,  20,
+     //  4,   4,   5,  13,  20,  20,  20,  20,
+     //  5,   5,  11,  20,  20,  20,  20,  20,
+     //  9,  13,  20,  20,  20,  20,  20,  20,
+     // 20,  20,  20,  20,  20,  20,  20,  20,
+     // 20,  20,  20,  20,  20,  20,  20,  20,
+     // 20,  20,  20,  20,  20,  20,  20,  20,
+     // 20,  20,  20,  20,  20,  20,  20,  20,
 };
 
 static const u8 JPEG_STD_DHT00[] =
@@ -309,6 +329,8 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
         return 0;
     }
 
+    u8* BufferStart = Buffer.At;
+
     Assert(PushU16(&Buffer, JPEG_SOI));
 
     jpeg_app0* APP0;
@@ -389,16 +411,41 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
     SOS->ApproximationBitLow = 0;
     SOS->ApproximationBitHigh = 0;
 
-    Assert(PushImage(&Buffer, Bitmap, 
+    u8* ScanStart = Buffer.At;
+
+    bit_stream BitStream;
+    BitStream.At = Buffer.At;
+    BitStream.Elapsed = Buffer.Elapsed;
+    BitStream.Buf = 0;
+    BitStream.Len = 0;
+
+    Assert(PushImage(&BitStream, Bitmap, 
                      &JPEG_STD_DQT_Y[1], &JPEG_STD_DQT_Chroma[1],
                      &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
                      &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1]));
 
+    u16 Zero = 0;
+    u8 NextFullByte = (BitStream.Len + 7) / 8;
+    u8 ZeroCount = NextFullByte * 8 - BitStream.Len;
+    Assert(PushBits(&BitStream, Zero, ZeroCount));
+    Assert(Flush(&BitStream));
+
+    Buffer.At = BitStream.At;
+    Buffer.Elapsed = BitStream.Elapsed;
+
+    Assert(PushU16(&Buffer, JPEG_EOI));
+
+    usz ScanSize = Buffer.At - ScanStart;
 
 #if 1
+    BitStream.At = ScanStart;
+    BitStream.Elapsed = ScanSize;
+    BitStream.Buf = 0;
+    BitStream.Len = 0;
+
     memset(Bitmap->At, 0xF0, Bitmap->Size);
 
-    Assert(PopImage(&Buffer, Bitmap, 
+    Assert(PopImage(&BitStream, Bitmap, 
                     &JPEG_STD_DQT_Y[1], &JPEG_STD_DQT_Chroma[1],
                     &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
                     &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1]));  
@@ -406,7 +453,7 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size)
     PlatformShowBitmap(Bitmap, "Bitmap");
 #endif
 
-    Assert(PushU16(&Buffer, JPEG_EOI));
+    *Size = Buffer.At - BufferStart;
 
-    return 0;
+    return BufferStart;
 }

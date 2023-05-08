@@ -23,6 +23,8 @@ typedef int8_t i8;
 
 #define ByteSwap16(x) ((((x) & 0xFF00) >> 8) | (((x) & 0x00FF) << 8))
 
+#define Min(x, y) ((x) <= (y) ? (x) : (y))
+
 typedef struct
 {
     i32 Width;
