@@ -26,11 +26,13 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
 
         Marker = *MarkerAt;
 
-        printf("[[Marker: 0x%04X", Marker);
+        // printf("Marker: 0x%04X", Marker);
 
         if(Marker == JPEG_EOI)
         {
             // NOTE: JPEG can also end prematurely, and without even a picture!
+            // NOTE#2: Looks like Windows can add additional bytes at the end of file,
+            // so don't assume that after EOI there will be 0 bytes elapsed!!!
             break;
         }
 
@@ -43,7 +45,7 @@ static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
         void* Payload = PopBytes(&Buffer, Length);
         Assert(Payload);
 
-        printf(" Length: %d]]\n", Length);
+        // printf(" Length: %d\n", Length);
 
         switch(Marker)
         {
