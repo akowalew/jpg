@@ -28,15 +28,11 @@ int main(int Argc, char** Argv)
     }
 
     bitmap Bitmap;
-    if(!ParseJPEG(InputData, InputSize, &Bitmap))
+    if(!DecodeJPEG(InputData, InputSize, &Bitmap))
     {
-        fprintf(stderr, "Failed to parse JPEG\n");
+        fprintf(stderr, "Failed to decode JPEG\n");
         return EXIT_FAILURE;
     }
-
-#if 1
-    PlatformShowBitmap(&Bitmap, "JPEG");
-#endif
     
     usz OutputSize;
     void* OutputData = ExportBMP(&Bitmap, &OutputSize);

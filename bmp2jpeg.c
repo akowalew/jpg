@@ -45,10 +45,10 @@ int main(int Argc, char** Argv)
     }
 
     usz OutputSize;
-    void* OutputData = ExportJPEG(&Bitmap, &OutputSize, Quality);
+    void* OutputData = EncodeJPEG(&Bitmap, &OutputSize, Quality);
     if(!OutputData)
     {
-        fprintf(stderr, "Failed to export JPEG\n");
+        fprintf(stderr, "Failed to encode JPEG\n");
         return EXIT_FAILURE;
     }
 

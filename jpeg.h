@@ -135,5 +135,5 @@ typedef struct
 } jpeg_soi;
 #pragma pack(pop)
 
-static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap);
-static void* ExportJPEG(bitmap* Bitmap, usz* Size, u8 Quality);
+static int   DecodeJPEG(void* Data, usz Size, bitmap* Bitmap);
+static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality);

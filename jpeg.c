@@ -222,7 +222,7 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
         {
             u8 Index = ZigZagTable[Y][X];
 
-            Z[Index] = (i16)D[Y][X];
+            Z[Index] = (i16) CLAMP(D[Y][X], -32768, 32767);
         }
     }
 
@@ -282,11 +282,8 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
     u8 DC_Size;
     Assert(PopSymbol(BitStream, DHT_DC, &DC_Size));
 
-    u16 DC_Value = 0;
-    if(DC_Size)
-    {
-        Assert(PopBits(BitStream, &DC_Value, DC_Size));
-    }
+    u16 DC_Value;
+    Assert(PopBits(BitStream, &DC_Value, DC_Size));
 
     Z[0] = DecodeNumber((u8)DC_Size, DC_Value);
     Z[0] += *DC;
@@ -296,9 +293,7 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
     while(Idx < 64)
     {
         u8 AC_RS = 0;
-        
         Assert(PopSymbol(BitStream, DHT_AC, &AC_RS));
-
         if(AC_RS == 0x00)
         {
             break;
@@ -319,7 +314,6 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
 
         u16 AC_Value;
         Assert(PopBits(BitStream, &AC_Value, AC_Size));
-
         Z[Idx] = DecodeNumber(AC_Size, AC_Value);
 
         Idx++;
@@ -329,7 +323,9 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
         Idx < 64;
         Idx++)
     {
-        Z[Idx] *= DQT[Idx];
+        int V = Z[Idx];
+        V *= DQT[Idx];
+        Z[Idx] = (i16) CLAMP(V, -32768, 32767);
     }
 
     i16 C[8][8];
@@ -388,7 +384,7 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
                 S += Tmp[Y][K] * DCT8x8Table[K][X];
             }
 
-            P[Y][X] = (i8) CLAMP(S, -127, 128);
+            P[Y][X] = (i8) CLAMP(S, -128, 127);
         }
     }
 
@@ -398,17 +394,22 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
 static int PushImage(bit_stream* BitStream, bitmap* Bitmap, 
                      const u8* DQT_Y, const u8* DQT_Chroma, 
                      const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
-                     const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC)
+                     const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
+                     u8 SamplingX, u8 SamplingY)
 {
+    Assert(SamplingX <= 2);
+    Assert(SamplingY <= 2);
+
     // TODO: Handling of images other than mod 8
-    u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
-    u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
+    u16 NumBlocksX = (u16)((Bitmap->Width + 7) / 8) / SamplingX;
+    u16 NumBlocksY = (u16)((Bitmap->Height + 7) / 8) / SamplingY;
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;
     i16 DC_Cr = 0;
 
     u8* Row = Bitmap->At;
+
     for(u16 BlockY = 0; 
         BlockY < NumBlocksY; 
         BlockY++)
@@ -419,44 +420,111 @@ static int PushImage(bit_stream* BitStream, bitmap* Bitmap,
             BlockX < NumBlocksX;
             BlockX++)
         {
-            i8 Y[8][8];
-            i8 Cb[8][8];
-            i8 Cr[8][8];
+            i8  Y[2][2][8][8];
+            i8 Cb[2][2][8][8];
+            i8 Cr[2][2][8][8];
 
-            u8* SubRow = Col;
-            for(u8 SubY = 0;
-                SubY < 8;
-                SubY++)
+            u8* MidRow = Col;
+            for(u8 SY = 0;
+                SY < SamplingY;
+                SY++)
             {
-                u8* SubCol = SubRow;
+                u8* MidCol = MidRow;
 
-                for(u8 SubX = 0;
-                    SubX < 8;
-                    SubX++)
+                for(u8 SX = 0;
+                    SX < SamplingX;
+                    SX++)
                 {
-                    u8 B = SubCol[0];
-                    u8 G = SubCol[1];
-                    u8 R = SubCol[2];
+                    u8* SubRow = MidCol;
 
-                    Y[SubY][SubX]  = (i8)(0.299f*R + 0.587f*G + 0.114f*B - 128);
-                    Cb[SubY][SubX] = (i8)(-0.168736f*R - 0.331264f*G + 0.5f*B);
-                    Cr[SubY][SubX] = (i8)(0.5f*R - 0.418688f*G - 0.081312f*B);
+                    i8* MidY =  (i8*) Y[SY][SX];
+                    i8* MidCb = (i8*) Cb[SY][SX];
+                    i8* MidCr = (i8*) Cr[SY][SX];
 
-                    SubCol += 4;
+                    for(u8 SubY = 0;
+                        SubY < 8;
+                        SubY++)
+                    {
+                        u8* SubCol = SubRow;
+
+                        for(u8 SubX = 0;
+                            SubX < 8;
+                            SubX++)
+                        {
+                            u8 B = SubCol[0];
+                            u8 G = SubCol[1];
+                            u8 R = SubCol[2];
+
+                            float Y_Value =  (0.299f*R + 0.587f*G + 0.114f*B - 128);
+                            float Cb_Value = (-0.168736f*R - 0.331264f*G + 0.5f*B);
+                            float Cr_Value = (0.5f*R - 0.418688f*G - 0.081312f*B);
+
+                            // TODO: Do we need CLAMP here or it is mathematically impossible to go out?
+
+                            MidY [SubY*8+SubX] = (i8) CLAMP(Y_Value,  -128, 127);
+                            MidCb[SubY*8+SubX] = (i8) CLAMP(Cb_Value, -128, 127);
+                            MidCr[SubY*8+SubX] = (i8) CLAMP(Cr_Value, -128, 127);
+
+                            SubCol += 4;
+                        }
+
+                        SubRow += Bitmap->Pitch;
+                    }
+
+                    MidCol += 8 * 4;
                 }
 
-                SubRow += Bitmap->Pitch;
+                MidRow += 8 * Bitmap->Pitch;
             }
 
-            // TODO: Subsampling
-            Assert(PushPixels(BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
-            Assert(PushPixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
-            Assert(PushPixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+            for(u8 CY = 0;
+                CY < 8;
+                CY++)
+            {
+                for(u8 CX = 0;
+                    CX < 8;
+                    CX++)
+                {
+                    int SumCb = 0;
+                    int SumCr = 0;
 
-            Col += 8 * 4;
+                    for(u8 SY = 0;
+                        SY < SamplingY;
+                        SY++)
+                    {
+                        for(u8 SX = 0;
+                            SX < SamplingX;
+                            SX++)
+                        {
+                            SumCb += Cb[SY][SX][CY][CX];
+                            SumCr += Cr[SY][SX][CY][CX];
+                        }
+                    }
+
+                    Cb[0][0][CY][CX] = (i8) (SumCb / (SamplingX*SamplingY)); 
+                    Cr[0][0][CY][CX] = (i8) (SumCr / (SamplingX*SamplingY));
+                }
+            }
+
+            for(u8 SY = 0;
+                SY < SamplingY;
+                SY++)
+            {
+                for(u8 SX = 0;
+                    SX < SamplingX;
+                    SX++)
+                {
+                    Assert(PushPixels(BitStream, Y[SY][SX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+                }
+            }
+
+            Assert(PushPixels(BitStream, Cb[0][0], DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
+            Assert(PushPixels(BitStream, Cr[0][0], DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+
+            Col += 8 * 4 * SamplingX;
         }
 
-        Row += Bitmap->Pitch * 8;
+        Row += Bitmap->Pitch * 8 * SamplingY;
     }
 
     return 1;
@@ -465,11 +533,15 @@ static int PushImage(bit_stream* BitStream, bitmap* Bitmap,
 static int PopImage(bit_stream* BitStream, bitmap* Bitmap, 
                     const u8* DQT_Y, const u8* DQT_Chroma, 
                     const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
-                    const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC)
+                    const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
+                    u8 SamplingX, u8 SamplingY)
 {
+    Assert(SamplingX <= 2);
+    Assert(SamplingY <= 2);
+
     // TODO: Handling of images other than mod 8
-    u16 NumBlocksX = (u16)(Bitmap->Width + 7) / 8;
-    u16 NumBlocksY = (u16)(Bitmap->Height + 7) / 8;
+    u16 NumBlocksX = (u16)((Bitmap->Width + 7) / 8) / SamplingX;
+    u16 NumBlocksY = (u16)((Bitmap->Height + 7) / 8) / SamplingY;
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;
@@ -486,190 +558,79 @@ static int PopImage(bit_stream* BitStream, bitmap* Bitmap,
             BlockX < NumBlocksX;
             BlockX++)
         {
-            i8 Y[8][8];
+            i8 Y[2][2][8][8];
             i8 Cb[8][8];
             i8 Cr[8][8];
 
-            // TODO: Subsampling
-            Assert(PopPixels(BitStream, Y, DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+            for(u8 SY = 0;
+                SY < SamplingY;
+                SY++)
+            {
+                for(u8 SX = 0;
+                    SX < SamplingX;
+                    SX++)
+                {
+                    Assert(PopPixels(BitStream, Y[SY][SX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+                }
+            }
+
             Assert(PopPixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
             Assert(PopPixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
 
-            u8* SubRow = Col;
-            for(u8 SubY = 0;
-                SubY < 8;
-                SubY++)
+            u8* MidRow = Col;
+
+            for(u8 SY = 0;
+                SY < SamplingY;
+                SY++)
             {
-                u8* SubCol = SubRow;
+                u8* MidCol = MidRow;
 
-                for(u8 SubX = 0;
-                    SubX < 8;
-                    SubX++)
+                for(u8 SX = 0;
+                    SX < SamplingX;
+                    SX++)
                 {
-                    u8 Y_value = Y[SubY][SubX] + 128;
-                    i8 Cb_value = Cb[SubY][SubX];
-                    i8 Cr_value = Cr[SubY][SubX];
+                    u8* SubRow = MidCol;
 
-                    f32 B = Y_value + 1.772F * Cb_value;
-                    f32 G = Y_value - 0.3441F * Cb_value - 0.71414F * Cr_value;
-                    f32 R = Y_value + 1.402F * Cr_value;
+                    i8* MidY = (i8*) Y[SY][SX];
 
-                    SubCol[0] = (u8) CLAMP(B, 0, 255);
-                    SubCol[1] = (u8) CLAMP(G, 0, 255);
-                    SubCol[2] = (u8) CLAMP(R, 0, 255);
+                    for(u8 SubY = 0;
+                        SubY < 8;
+                        SubY++)
+                    {
+                        u8* SubCol = SubRow;
 
-                    SubCol += 4;
+                        for(u8 SubX = 0;
+                            SubX < 8;
+                            SubX++)
+                        {
+                            u8 Y_value = MidY[SubY*8+SubX] + 128;
+                            i8 Cb_value = Cb[SubY][SubX];
+                            i8 Cr_value = Cr[SubY][SubX];
+
+                            f32 B = Y_value + 1.772F * Cb_value;
+                            f32 G = Y_value - 0.344136F * Cb_value - 0.714136F * Cr_value;
+                            f32 R = Y_value + 1.402F * Cr_value;
+
+                            SubCol[0] = (u8) CLAMP(B, 0, 255);
+                            SubCol[1] = (u8) CLAMP(G, 0, 255);
+                            SubCol[2] = (u8) CLAMP(R, 0, 255);
+
+                            SubCol += 4;
+                        }
+
+                        SubRow += Bitmap->Pitch;
+                    }
+
+                    MidCol += 8 * 4;
                 }
 
-                SubRow += Bitmap->Pitch;
+                MidRow += 8 * Bitmap->Pitch;
             }
 
-            Col += 8 * 4;
+            Col += 8 * 4 * SamplingX;
         }
 
-        Row += Bitmap->Pitch * 8;
-    }
-
-    return 1;
-}
-
-static int ParseJPEG(void* Data, usz Size, bitmap* Bitmap)
-{
-    buffer Buffer;
-    Buffer.At = Data;
-    Buffer.Elapsed = Size;
-
-    u16* MarkerAt = PopU16(&Buffer);
-    Assert(MarkerAt);
-
-    u16 Marker = *MarkerAt;
-    Assert(Marker == JPEG_SOI);
-
-    jpeg_app0* APP0 = 0;
-    jpeg_dqt* DQT = 0;
-    jpeg_sof0* SOF0 = 0;
-    jpeg_dht* DHT = 0;
-    jpeg_sos* SOS = 0;
-
-    u8* DQTs[2] = {0};
-    jpeg_dht* DHTs[2][2] = {0};
-
-    while(Buffer.Elapsed)
-    {
-        MarkerAt = PopU16(&Buffer);
-        Assert(MarkerAt);
-
-        Marker = *MarkerAt;
-
-        // printf("Marker: 0x%04X", Marker);
-
-        if(Marker == JPEG_EOI)
-        {
-            // NOTE: JPEG can also end prematurely, and without even a picture!
-            // NOTE#2: Looks like Windows can add additional bytes at the end of file,
-            // so don't assume that after EOI there will be 0 bytes elapsed!!!
-            break;
-        }
-
-        u16* LengthAt = PopU16(&Buffer);
-        Assert(LengthAt);
-
-        u16 Length = ByteSwap16(*LengthAt);
-        Length -= sizeof(Length);
-
-        void* Payload = PopBytes(&Buffer, Length);
-        Assert(Payload);
-
-        // printf(" Length: %d\n", Length);
-
-        switch(Marker)
-        {
-            case JPEG_APP0:
-            {
-                Assert(Length == sizeof(*APP0));
-                APP0 = Payload;
-
-                // printf("APP0 version %d.%d\n", APP0->VersionMajor, APP0->VersionMinor);
-            } break;
-
-            case JPEG_APP1:
-            {
-                // printf("APP1\n");
-            } break;
-
-            case JPEG_DQT:
-            {
-                Assert(Length == sizeof(*DQT));
-                DQT = Payload;
-
-                Assert(DQT->Id < ArrayCount(DQTs));
-                DQTs[DQT->Id] = DQT->Coefficients;
-            } break;
-
-            case JPEG_SOF0:
-            {
-                Assert(Length == sizeof(*SOF0));
-                SOF0 = Payload;
-
-                Assert(SOF0->NumComponents <= ArrayCount(SOF0->Components));
-                SOF0->ImageHeight = ByteSwap16(SOF0->ImageHeight);
-                SOF0->ImageWidth = ByteSwap16(SOF0->ImageWidth);
-                Assert(SOF0->NumComponents == 3);
-            } break;
-
-            case JPEG_DHT:
-            {
-                Assert(Length >= sizeof(*DHT));
-                DHT = Payload;
-                Length -= sizeof(*DHT);
-
-                usz Total = 0;
-                for(u8 Idx = 0;
-                    Idx < ArrayCount(DHT->Counts);
-                    Idx++)
-                {
-                    Total += DHT->Counts[Idx];
-                }
-
-                Assert(Length == Total);
-                u8* HuffmanCodes = DHT->Values;
-
-                Assert(DHT->TableClass < 2);
-                Assert(DHT->TableId < 2);
-                DHTs[DHT->TableId][DHT->TableClass] = DHT;
-            } break;
-
-            case JPEG_SOS:
-            {
-                Assert(Length == sizeof(*SOS));
-                SOS = Payload;
-
-                Assert(SOS->NumComponents <= ArrayCount(SOS->Components));
-                Assert(SOS->NumComponents == 3);
-
-                Bitmap->Width = SOF0->ImageWidth;
-                Bitmap->Height = SOF0->ImageHeight;
-                Bitmap->Pitch = Bitmap->Width * 4;
-                Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
-                Bitmap->At = PlatformAlloc(Bitmap->Size);
-                Assert(Bitmap->At);
-
-                bit_stream BitStream;
-                BitStream.At = Buffer.At;
-                BitStream.Elapsed = Buffer.Elapsed;
-                BitStream.Buf = 0;
-                BitStream.Len = 0;
-
-                Assert(PopImage(&BitStream, Bitmap, 
-                                DQTs[0], DQTs[1],
-                                DHTs[0][0]->Counts, DHTs[0][1]->Counts,
-                                DHTs[1][0]->Counts, DHTs[1][1]->Counts));
-
-                usz BackCount = (BitStream.Len + 7) / 8;
-                Buffer.At = BitStream.At - BackCount;
-                Buffer.Elapsed = BitStream.Elapsed - BackCount;
-            } break;
-        }
+        Row += Bitmap->Pitch * 8 * SamplingY;
     }
 
     return 1;
@@ -789,8 +750,15 @@ static const u8 JPEG_STD_DHT11[] =
     0xF9, 0xFA,
 };
 
-static void* ExportJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
+static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 {
+    u8 SamplingX = 2;
+    u8 SamplingY = 2;
+
+    Quality = CLAMP(Quality, 1, 100);
+
+    float Ratio = (Quality <= 50) ? (50.F / Quality) : ((100.F - Quality) / 50);
+
     Assert(Bitmap->Width < 65536);
     Assert(Bitmap->Height < 65536);
 
@@ -824,9 +792,6 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 
     jpeg_dqt* DQT[2];
 
-    Quality = CLAMP(Quality, 1, 100);
-    float Ratio = (Quality <= 50) ? (50.F / Quality) : ((100.F - Quality) / 50);
-
     Assert(DQT[0] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
     DQT[0]->Id = 0;
     for(u8 Idx = 0;
@@ -857,8 +822,8 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
     SOF0->ImageWidth = ByteSwap16(Bitmap->Width);
     SOF0->NumComponents = 3;
     SOF0->Components[0].ComponentId = 1;
-    SOF0->Components[0].VerticalSubsamplingFactor = 1;
-    SOF0->Components[0].HorizontalSubsamplingFactor = 1;
+    SOF0->Components[0].VerticalSubsamplingFactor = SamplingY;
+    SOF0->Components[0].HorizontalSubsamplingFactor = SamplingX;
     SOF0->Components[0].QuantizationTableId = 0;
     SOF0->Components[1].ComponentId = 2;
     SOF0->Components[1].VerticalSubsamplingFactor = 1;
@@ -907,14 +872,11 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
     BitStream.Buf = 0;
     BitStream.Len = 0;
 
-#if 0
-    bit_stream Orig = BitStream;
-#endif
-
     Assert(PushImage(&BitStream, Bitmap, 
                      DQT[0]->Coefficients, DQT[1]->Coefficients,
                      &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
-                     &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1]));
+                     &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1],
+                     SamplingX, SamplingY));
 
     u16 Zero = 0;
     u8 NextFullByte = (BitStream.Len + 7) / 8;
@@ -922,13 +884,23 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
     Assert(PushBits(&BitStream, Zero, ZeroCount));
     Assert(Flush(&BitStream));
 
-#if 0
+#if 1
+    bit_stream Orig = BitStream;
+
+    BitStream.At = Buffer.At;
+    BitStream.Elapsed = Buffer.Elapsed;
+    BitStream.Buf = 0;
+    BitStream.Len = 0;
+
     memset(Bitmap->At, 0xF0, Bitmap->Size);
 
-    Assert(PopImage(&Orig, Bitmap, 
+    Assert(PopImage(&BitStream, Bitmap, 
                     DQT[0]->Coefficients, DQT[1]->Coefficients,
                     &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
-                    &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1]));  
+                    &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1],
+                    SamplingX, SamplingY));  
+
+    BitStream = Orig;
 
     PlatformShowBitmap(Bitmap, "Bitmap");
 #endif
@@ -941,4 +913,163 @@ static void* ExportJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
     *Size = Buffer.At - BufferStart;
 
     return BufferStart;
+}
+
+static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
+{
+    buffer Buffer;
+    Buffer.At = Data;
+    Buffer.Elapsed = Size;
+
+    u16* MarkerAt = PopU16(&Buffer);
+    Assert(MarkerAt);
+
+    u16 Marker = *MarkerAt;
+    Assert(Marker == JPEG_SOI);
+
+    jpeg_app0* APP0 = 0;
+    jpeg_dqt* DQT = 0;
+    jpeg_sof0* SOF0 = 0;
+    jpeg_dht* DHT = 0;
+    jpeg_sos* SOS = 0;
+
+    u8* DQTs[2] = {0};
+    jpeg_dht* DHTs[2][2] = {0};
+
+    while(Buffer.Elapsed)
+    {
+        MarkerAt = PopU16(&Buffer);
+        Assert(MarkerAt);
+
+        Marker = *MarkerAt;
+
+        printf("Marker: 0x%04X", Marker);
+
+        if(Marker == JPEG_EOI)
+        {
+            // NOTE: JPEG can also end prematurely, and without even a picture!
+            // NOTE#2: Looks like Windows can add additional bytes at the end of file,
+            // so don't assume that after EOI there will be 0 bytes elapsed!!!
+            break;
+        }
+
+        u16* LengthAt = PopU16(&Buffer);
+        Assert(LengthAt);
+
+        u16 Length = ByteSwap16(*LengthAt);
+        Length -= sizeof(Length);
+
+        void* Payload = PopBytes(&Buffer, Length);
+        Assert(Payload);
+
+        printf(" Length: %d\n", Length);
+
+        switch(Marker)
+        {
+#if 0
+            case JPEG_APP0:
+            {
+                Assert(Length == sizeof(*APP0));
+                APP0 = Payload;
+            } break;
+#endif
+
+            case JPEG_DQT:
+            {
+                Assert(Length == sizeof(*DQT));
+                DQT = Payload;
+
+                Assert(DQT->Id < ArrayCount(DQTs));
+                DQTs[DQT->Id] = DQT->Coefficients;
+            } break;
+
+            case JPEG_SOF0:
+            {
+                Assert(Length == sizeof(*SOF0));
+                SOF0 = Payload;
+
+                Assert(SOF0->NumComponents <= ArrayCount(SOF0->Components));
+                SOF0->ImageHeight = ByteSwap16(SOF0->ImageHeight);
+                SOF0->ImageWidth = ByteSwap16(SOF0->ImageWidth);
+                Assert(SOF0->NumComponents == 3);
+            } break;
+
+            case JPEG_SOF2:
+            {
+                Assert(!"Progressive JPEG not supported");
+            } break;
+
+            case JPEG_DHT:
+            {
+                Assert(Length >= sizeof(*DHT));
+                DHT = Payload;
+                Length -= sizeof(*DHT);
+
+                usz Total = 0;
+                for(u8 Idx = 0;
+                    Idx < ArrayCount(DHT->Counts);
+                    Idx++)
+                {
+                    // TODO: SIMD
+                    Total += DHT->Counts[Idx];
+                }
+
+                Assert(Length == Total);
+                u8* HuffmanCodes = DHT->Values;
+
+                Assert(DHT->TableClass < 2);
+                Assert(DHT->TableId < 2);
+                DHTs[DHT->TableId][DHT->TableClass] = DHT;
+            } break;
+
+            case JPEG_SOS:
+            {
+                Assert(Length == sizeof(*SOS));
+                SOS = Payload;
+
+                Assert(SOS->NumComponents <= ArrayCount(SOS->Components));
+                Assert(SOS->NumComponents == 3);
+
+                Bitmap->Width = SOF0->ImageWidth;
+                Bitmap->Height = SOF0->ImageHeight;
+                Bitmap->Pitch = Bitmap->Width * 4;
+                Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
+                Bitmap->At = PlatformAlloc(Bitmap->Size);
+                Assert(Bitmap->At);
+
+                bit_stream BitStream;
+                BitStream.At = Buffer.At;
+                BitStream.Elapsed = Buffer.Elapsed;
+                BitStream.Buf = 0;
+                BitStream.Len = 0;
+
+                Assert(SOF0->Components[0].HorizontalSubsamplingFactor <= 2);
+                Assert(SOF0->Components[0].VerticalSubsamplingFactor <= 2);
+                Assert(SOF0->Components[1].VerticalSubsamplingFactor == 1);
+                Assert(SOF0->Components[1].HorizontalSubsamplingFactor == 1);
+                Assert(SOF0->Components[2].VerticalSubsamplingFactor == 1);
+                Assert(SOF0->Components[2].HorizontalSubsamplingFactor == 1);
+
+                u8 SamplingX = SOF0->Components[0].HorizontalSubsamplingFactor;
+                u8 SamplingY = SOF0->Components[0].VerticalSubsamplingFactor;
+
+                Assert(PopImage(&BitStream, Bitmap, 
+                                DQTs[0], DQTs[1],
+                                DHTs[0][0]->Counts, DHTs[0][1]->Counts,
+                                DHTs[1][0]->Counts, DHTs[1][1]->Counts,
+                                SamplingX, SamplingY));
+
+#if 1
+                PlatformShowBitmap(Bitmap, "Decoded JPEG");
+#endif
+
+                usz BackCount = (BitStream.Len & 7) ? 0 : 1;
+                BackCount += (BitStream.Len + 7) / 8;
+                Buffer.At = BitStream.At - BackCount;
+                Buffer.Elapsed = BitStream.Elapsed - BackCount;
+            } break;
+        }
+    }
+
+    return 1;
 }

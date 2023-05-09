@@ -26,6 +26,7 @@ typedef int8_t i8;
 #define ByteSwap16(x) ((((x) & 0xFF00) >> 8) | (((x) & 0x00FF) << 8))
 
 #define Min(x, y) ((x) <= (y) ? (x) : (y))
+#define Max(x, y) ((x) >= (y) ? (x) : (y))
 
 #define CLAMP(X, Lo, Hi) ((X) <= (Lo) ? (Lo) : ((X) >= (Hi) ? (Hi) : (X)))
 
@@ -194,7 +195,11 @@ static int PopBits(bit_stream* BitStream, u16* Value, u8 Size)
 {
     int Result = 0;
 
-    Assert(Size);
+    if(!Size)
+    {
+        *Value = 0;
+        return 1;
+    }
 
     if(Refill(BitStream))
     {
