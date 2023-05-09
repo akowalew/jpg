@@ -136,4 +136,6 @@ typedef struct
 #pragma pack(pop)
 
 static int   DecodeJPEG(void* Data, usz Size, bitmap* Bitmap);
+static int   DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap);
 static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality);
+static int   EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality);

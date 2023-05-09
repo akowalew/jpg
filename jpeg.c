@@ -752,6 +752,29 @@ static const u8 JPEG_STD_DHT11[] =
 
 static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 {
+    usz BufferSize = Bitmap->Size*16; // TODO: Dynamical approach, eeeh?
+    u8* BufferStart = PlatformAlloc(BufferSize);
+    if(!BufferStart)
+    {
+        return 0;
+    }
+
+    buffer Buffer;
+    Buffer.Elapsed = BufferSize;
+    Buffer.At = BufferStart;
+    if(!EncodeJPEGintoBuffer(&Buffer, Bitmap, Quality))
+    {
+        PlatformFree(Buffer.At);
+        return 0;
+    }
+
+    *Size = Buffer.At - BufferStart;
+
+    return BufferStart;
+}
+
+static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
+{
     u8 SamplingX = 2;
     u8 SamplingY = 2;
 
@@ -762,21 +785,11 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
     Assert(Bitmap->Width < 65536);
     Assert(Bitmap->Height < 65536);
 
-    buffer Buffer;
-    Buffer.Elapsed = Bitmap->Size*16; // TODO: Dynamical approach, eeeh?
-    Buffer.At = PlatformAlloc(Buffer.Elapsed);
-    if(!Buffer.At)
-    {
-        return 0;
-    }
-
-    u8* BufferStart = Buffer.At;
-
-    Assert(PushU16(&Buffer, JPEG_SOI));
+    Assert(PushU16(Buffer, JPEG_SOI));
 
     jpeg_app0* APP0;
 
-    Assert(APP0 = PushSegment(&Buffer, JPEG_APP0, jpeg_app0));
+    Assert(APP0 = PushSegment(Buffer, JPEG_APP0, jpeg_app0));
     APP0->JFIF[0] = 'J';
     APP0->JFIF[1] = 'F';
     APP0->JFIF[2] = 'I';
@@ -792,7 +805,7 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 
     jpeg_dqt* DQT[2];
 
-    Assert(DQT[0] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
+    Assert(DQT[0] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
     DQT[0]->Id = 0;
     for(u8 Idx = 0;
         Idx < 64;
@@ -803,7 +816,7 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
         DQT[0]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
     }
 
-    Assert(DQT[1] = PushSegmentCount(&Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
+    Assert(DQT[1] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
     DQT[1]->Id = 1;
     for(u8 Idx = 0;
         Idx < 64;
@@ -816,7 +829,7 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 
     jpeg_sof0* SOF0;
 
-    Assert(SOF0 = PushSegment(&Buffer, JPEG_SOF0, jpeg_sof0));
+    Assert(SOF0 = PushSegment(Buffer, JPEG_SOF0, jpeg_sof0));
     SOF0->BitsPerSample = 8;
     SOF0->ImageHeight = ByteSwap16(Bitmap->Height);
     SOF0->ImageWidth = ByteSwap16(Bitmap->Width);
@@ -836,21 +849,21 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 
     jpeg_dht* DHT[2][2];
 
-    Assert(DHT[0][0] = PushSegmentCount(&Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT00)));
+    Assert(DHT[0][0] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT00)));
     memcpy(DHT[0][0], JPEG_STD_DHT00, sizeof(JPEG_STD_DHT00));
 
-    Assert(DHT[0][1] = PushSegmentCount(&Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT01)));
+    Assert(DHT[0][1] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT01)));
     memcpy(DHT[0][1], JPEG_STD_DHT01, sizeof(JPEG_STD_DHT01));
 
-    Assert(DHT[1][0] = PushSegmentCount(&Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT10)));
+    Assert(DHT[1][0] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT10)));
     memcpy(DHT[1][0], JPEG_STD_DHT10, sizeof(JPEG_STD_DHT10));
 
-    Assert(DHT[1][1] = PushSegmentCount(&Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT11)));
+    Assert(DHT[1][1] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT11)));
     memcpy(DHT[1][1], JPEG_STD_DHT11, sizeof(JPEG_STD_DHT11));
 
     jpeg_sos* SOS;
 
-    Assert(SOS = PushSegment(&Buffer, JPEG_SOS, jpeg_sos));
+    Assert(SOS = PushSegment(Buffer, JPEG_SOS, jpeg_sos));
     SOS->NumComponents = 3;
     SOS->Components[0].ComponentId = 1;
     SOS->Components[0].IndexDC = 0;
@@ -867,8 +880,8 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
     SOS->ApproximationBitHigh = 0;
 
     bit_stream BitStream;
-    BitStream.At = Buffer.At;
-    BitStream.Elapsed = Buffer.Elapsed;
+    BitStream.At = Buffer->At;
+    BitStream.Elapsed = Buffer->Elapsed;
     BitStream.Buf = 0;
     BitStream.Len = 0;
 
@@ -887,8 +900,8 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 #if 1
     bit_stream Orig = BitStream;
 
-    BitStream.At = Buffer.At;
-    BitStream.Elapsed = Buffer.Elapsed;
+    BitStream.At = Buffer->At;
+    BitStream.Elapsed = Buffer->Elapsed;
     BitStream.Buf = 0;
     BitStream.Len = 0;
 
@@ -905,14 +918,12 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
     PlatformShowBitmap(Bitmap, "Bitmap");
 #endif
 
-    Buffer.At = BitStream.At;
-    Buffer.Elapsed = BitStream.Elapsed;
+    Buffer->At = BitStream.At;
+    Buffer->Elapsed = BitStream.Elapsed;
 
-    Assert(PushU16(&Buffer, JPEG_EOI));
+    Assert(PushU16(Buffer, JPEG_EOI));
 
-    *Size = Buffer.At - BufferStart;
-
-    return BufferStart;
+    return 1;
 }
 
 static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
@@ -920,8 +931,12 @@ static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
     buffer Buffer;
     Buffer.At = Data;
     Buffer.Elapsed = Size;
+    return DecodeJPEGfromBuffer(&Buffer, Bitmap);
+}
 
-    u16* MarkerAt = PopU16(&Buffer);
+static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
+{
+    u16* MarkerAt = PopU16(Buffer);
     Assert(MarkerAt);
 
     u16 Marker = *MarkerAt;
@@ -936,9 +951,9 @@ static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
     u8* DQTs[2] = {0};
     jpeg_dht* DHTs[2][2] = {0};
 
-    while(Buffer.Elapsed)
+    while(Buffer->Elapsed)
     {
-        MarkerAt = PopU16(&Buffer);
+        MarkerAt = PopU16(Buffer);
         Assert(MarkerAt);
 
         Marker = *MarkerAt;
@@ -953,13 +968,13 @@ static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
             break;
         }
 
-        u16* LengthAt = PopU16(&Buffer);
+        u16* LengthAt = PopU16(Buffer);
         Assert(LengthAt);
 
         u16 Length = ByteSwap16(*LengthAt);
         Length -= sizeof(Length);
 
-        void* Payload = PopBytes(&Buffer, Length);
+        void* Payload = PopBytes(Buffer, Length);
         Assert(Payload);
 
         printf(" Length: %d\n", Length);
@@ -1038,8 +1053,8 @@ static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
                 Assert(Bitmap->At);
 
                 bit_stream BitStream;
-                BitStream.At = Buffer.At;
-                BitStream.Elapsed = Buffer.Elapsed;
+                BitStream.At = Buffer->At;
+                BitStream.Elapsed = Buffer->Elapsed;
                 BitStream.Buf = 0;
                 BitStream.Len = 0;
 
@@ -1065,8 +1080,8 @@ static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
 
                 usz BackCount = (BitStream.Len & 7) ? 0 : 1;
                 BackCount += (BitStream.Len + 7) / 8;
-                Buffer.At = BitStream.At - BackCount;
-                Buffer.Elapsed = BitStream.Elapsed - BackCount;
+                Buffer->At = BitStream.At - BackCount;
+                Buffer->Elapsed = BitStream.Elapsed - BackCount;
             } break;
         }
     }

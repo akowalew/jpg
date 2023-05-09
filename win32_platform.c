@@ -5,6 +5,11 @@
 
 #include "platform.h"
 
+void PlatformFree(void* Data)
+{
+    VirtualFree(Data, 0, MEM_DECOMMIT|MEM_RELEASE);
+}
+
 void* PlatformAlloc(usz Size)
 {
     void* Result = VirtualAlloc(0, Size, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);

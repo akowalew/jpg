@@ -256,6 +256,7 @@ static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
 }
 
 void* PlatformAlloc(usz Size);
+void  PlatformFree(void* Data);
 void* PlatformReadEntireFile(const char* Name, usz* Size);
 int PlatformWriteEntireFile(const char* Name, void* Data, usz Size);
 int PlatformShowBitmap(bitmap* Bitmap, const char* Title);
