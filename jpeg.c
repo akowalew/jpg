@@ -275,7 +275,7 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
     return 1;
 }
 
-static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+static int DecodePixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
     i16 Z[64] = {0};
 
@@ -285,8 +285,8 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
     u16 DC_Value;
     Assert(PopBits(BitStream, &DC_Value, DC_Size));
 
-    Z[0] = DecodeNumber((u8)DC_Size, DC_Value);
-    Z[0] += *DC;
+    i16 Diff = DecodeNumber(DC_Size, DC_Value);
+    Z[0] = *DC + Diff;
     *DC = Z[0];
 
     u8 Idx = 1;
@@ -391,7 +391,7 @@ static int PopPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8*
     return 1;
 }
 
-static int PushImage(bit_stream* BitStream, bitmap* Bitmap, 
+static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap, 
                      const u8* DQT_Y, const u8* DQT_Chroma, 
                      const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
                      const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
@@ -530,7 +530,7 @@ static int PushImage(bit_stream* BitStream, bitmap* Bitmap,
     return 1;
 }
 
-static int PopImage(bit_stream* BitStream, bitmap* Bitmap, 
+static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap, 
                     const u8* DQT_Y, const u8* DQT_Chroma, 
                     const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
                     const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
@@ -540,8 +540,8 @@ static int PopImage(bit_stream* BitStream, bitmap* Bitmap,
     Assert(SamplingY <= 2);
 
     // TODO: Handling of images other than mod 8
-    u16 NumBlocksX = (u16)((Bitmap->Width + 7) / 8) / SamplingX;
-    u16 NumBlocksY = (u16)((Bitmap->Height + 7) / 8) / SamplingY;
+    u16 NumBlocksX = (u16)((Bitmap->Width + (8 * SamplingX - 1)) / (8 * SamplingX));
+    u16 NumBlocksY = (u16)((Bitmap->Height + (8 * SamplingY - 1)) / (8 * SamplingY));
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;
@@ -570,12 +570,12 @@ static int PopImage(bit_stream* BitStream, bitmap* Bitmap,
                     SX < SamplingX;
                     SX++)
                 {
-                    Assert(PopPixels(BitStream, Y[SY][SX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+                    Assert(DecodePixels(BitStream, Y[SY][SX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
                 }
             }
 
-            Assert(PopPixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
-            Assert(PopPixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+            Assert(DecodePixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
+            Assert(DecodePixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
 
             u8* MidRow = Col;
 
@@ -603,6 +603,8 @@ static int PopImage(bit_stream* BitStream, bitmap* Bitmap,
                             SubX < 8;
                             SubX++)
                         {
+                            // FIXME: Interpolation of Chroma!
+
                             u8 Y_value = MidY[SubY*8+SubX] + 128;
                             i8 Cb_value = Cb[SubY][SubX];
                             i8 Cr_value = Cr[SubY][SubX];
@@ -885,7 +887,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     BitStream.Buf = 0;
     BitStream.Len = 0;
 
-    Assert(PushImage(&BitStream, Bitmap, 
+    Assert(EncodeImage(&BitStream, Bitmap, 
                      DQT[0]->Coefficients, DQT[1]->Coefficients,
                      &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
                      &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1],
@@ -907,7 +909,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
 
     memset(Bitmap->At, 0xF0, Bitmap->Size);
 
-    Assert(PopImage(&BitStream, Bitmap, 
+    Assert(DecodeImage(&BitStream, Bitmap, 
                     DQT[0]->Coefficients, DQT[1]->Coefficients,
                     &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
                     &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1],
@@ -981,7 +983,7 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 
         switch(Marker)
         {
-#if 0
+#if 1
             case JPEG_APP0:
             {
                 Assert(Length == sizeof(*APP0));
@@ -1045,8 +1047,21 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 Assert(SOS->NumComponents <= ArrayCount(SOS->Components));
                 Assert(SOS->NumComponents == 3);
 
-                Bitmap->Width = SOF0->ImageWidth;
-                Bitmap->Height = SOF0->ImageHeight;
+                Assert(SOF0->Components[0].HorizontalSubsamplingFactor <= 2);
+                Assert(SOF0->Components[0].VerticalSubsamplingFactor <= 2);
+                Assert(SOF0->Components[1].VerticalSubsamplingFactor == 1);
+                Assert(SOF0->Components[1].HorizontalSubsamplingFactor == 1);
+                Assert(SOF0->Components[2].VerticalSubsamplingFactor == 1);
+                Assert(SOF0->Components[2].HorizontalSubsamplingFactor == 1);
+
+                u8 SamplingX = SOF0->Components[0].HorizontalSubsamplingFactor;
+                u8 SamplingY = SOF0->Components[0].VerticalSubsamplingFactor;
+
+                u16 NumBlocksX = (u16)((SOF0->ImageWidth + (8 * SamplingX - 1)) / (8 * SamplingX));
+                u16 NumBlocksY = (u16)((SOF0->ImageHeight + (8 * SamplingY - 1)) / (8 * SamplingY));
+
+                Bitmap->Width = NumBlocksX * 8 * SamplingX;
+                Bitmap->Height = NumBlocksY * 8 * SamplingY;
                 Bitmap->Pitch = Bitmap->Width * 4;
                 Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
                 Bitmap->At = PlatformAlloc(Bitmap->Size);
@@ -1058,30 +1073,50 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 BitStream.Buf = 0;
                 BitStream.Len = 0;
 
-                Assert(SOF0->Components[0].HorizontalSubsamplingFactor <= 2);
-                Assert(SOF0->Components[0].VerticalSubsamplingFactor <= 2);
-                Assert(SOF0->Components[1].VerticalSubsamplingFactor == 1);
-                Assert(SOF0->Components[1].HorizontalSubsamplingFactor == 1);
-                Assert(SOF0->Components[2].VerticalSubsamplingFactor == 1);
-                Assert(SOF0->Components[2].HorizontalSubsamplingFactor == 1);
-
-                u8 SamplingX = SOF0->Components[0].HorizontalSubsamplingFactor;
-                u8 SamplingY = SOF0->Components[0].VerticalSubsamplingFactor;
-
-                Assert(PopImage(&BitStream, Bitmap, 
+                Assert(DecodeImage(&BitStream, Bitmap, 
                                 DQTs[0], DQTs[1],
                                 DHTs[0][0]->Counts, DHTs[0][1]->Counts,
                                 DHTs[1][0]->Counts, DHTs[1][1]->Counts,
                                 SamplingX, SamplingY));
 
 #if 1
+                u8* Row = Bitmap->At;
+                for(int Y = 0;
+                    Y < Bitmap->Height;
+                    Y++)
+                {
+                    u8* Col = Row;
+                    for(int X = 0;
+                        X < Bitmap->Width;
+                        X++)
+                    {
+                        if((Y % 16) == 0 &&
+                           (X % 16) == 0)
+                        {
+                            *(u32*)(Col) |= 0x0000FF00;
+                        }
+                        else if((Y % 8) == 7 ||
+                           (X % 8) == 7)
+                        {
+                            *(u32*)(Col) |= 0x00FF0000;
+                        }
+
+                        Col += 4;
+                    }
+                    Row += Bitmap->Pitch;
+                }
+
                 PlatformShowBitmap(Bitmap, "Decoded JPEG");
 #endif
 
+#if 0
                 usz BackCount = (BitStream.Len & 7) ? 0 : 1;
                 BackCount += (BitStream.Len + 7) / 8;
                 Buffer->At = BitStream.At - BackCount;
                 Buffer->Elapsed = BitStream.Elapsed - BackCount;
+#else
+                return 1;
+#endif
             } break;
         }
     }

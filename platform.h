@@ -136,9 +136,7 @@ static int Refill(bit_stream* BitStream)
     
     BytesCount = (u8) Min(BitStream->Elapsed, BytesCount);
 
-    for(u8 ByteIdx = 0;
-        ByteIdx < BytesCount;
-        ByteIdx++)
+    while(BytesCount)
     {
         u32 Byte = *(BitStream->At++);
         BitStream->Elapsed--;
@@ -146,6 +144,23 @@ static int Refill(bit_stream* BitStream)
         {
             u8 NextByte = *(BitStream->At++);
             BitStream->Elapsed--;
+            BytesCount = (u8) Min(BitStream->Elapsed, BytesCount);
+
+            if(NextByte != 0x00)
+            {
+                // FIXME: This function is vurnelable!
+                // We should instead jump completely out 
+                // of the world in case of meeting FFD9 marker
+
+                if(NextByte == 0xD9)
+                {
+                    return 1;
+                }
+                else
+                {
+                    Assert(!"Not supported marker");
+                }
+            }
         }
 
 #if 0
@@ -156,6 +171,8 @@ static int Refill(bit_stream* BitStream)
 #endif
 
         BitStream->Len += 8;
+
+        BytesCount--;
     }
 
     return 1;
