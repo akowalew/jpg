@@ -577,56 +577,34 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
             Assert(DecodePixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
             Assert(DecodePixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
 
-            u8* MidRow = Col;
+            u8* SubRow = Col;
 
-            for(u8 SY = 0;
-                SY < SamplingY;
-                SY++)
+            for(u32 SubY = 0;
+                SubY < 8 * SamplingY;
+                SubY++)
             {
-                u8* MidCol = MidRow;
+                u8* SubCol = SubRow;
 
-                for(u8 SX = 0;
-                    SX < SamplingX;
-                    SX++)
+                for(u32 SubX = 0;
+                    SubX < 8 * SamplingX;
+                    SubX++)
                 {
-                    u8* SubRow = MidCol;
+                    u8 Y_value = Y[SubY/8][SubX/8][SubY%8][SubX%8] + 128;
+                    i8 Cb_value = Cb[SubY/SamplingY][SubX/SamplingX];
+                    i8 Cr_value = Cr[SubY/SamplingY][SubX/SamplingX];
 
-                    i8* MidY = (i8*) Y[SY][SX];
+                    f32 B = Y_value + 1.772F * Cb_value;
+                    f32 G = Y_value - 0.344136F * Cb_value - 0.714136F * Cr_value;
+                    f32 R = Y_value + 1.402F * Cr_value;
 
-                    for(u8 SubY = 0;
-                        SubY < 8;
-                        SubY++)
-                    {
-                        u8* SubCol = SubRow;
+                    SubCol[0] = (u8) CLAMP(B, 0, 255);
+                    SubCol[1] = (u8) CLAMP(G, 0, 255);
+                    SubCol[2] = (u8) CLAMP(R, 0, 255);
 
-                        for(u8 SubX = 0;
-                            SubX < 8;
-                            SubX++)
-                        {
-                            // FIXME: Interpolation of Chroma!
-
-                            u8 Y_value = MidY[SubY*8+SubX] + 128;
-                            i8 Cb_value = Cb[SubY][SubX];
-                            i8 Cr_value = Cr[SubY][SubX];
-
-                            f32 B = Y_value + 1.772F * Cb_value;
-                            f32 G = Y_value - 0.344136F * Cb_value - 0.714136F * Cr_value;
-                            f32 R = Y_value + 1.402F * Cr_value;
-
-                            SubCol[0] = (u8) CLAMP(B, 0, 255);
-                            SubCol[1] = (u8) CLAMP(G, 0, 255);
-                            SubCol[2] = (u8) CLAMP(R, 0, 255);
-
-                            SubCol += 4;
-                        }
-
-                        SubRow += Bitmap->Pitch;
-                    }
-
-                    MidCol += 8 * 4;
+                    SubCol += 4;
                 }
 
-                MidRow += 8 * Bitmap->Pitch;
+                SubRow += Bitmap->Pitch;
             }
 
             Col += 8 * 4 * SamplingX;
