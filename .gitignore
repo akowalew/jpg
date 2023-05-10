@@ -5,6 +5,7 @@
 *.obj
 jpeg
 bmp2jpeg
+jpg2bmp
 *.jpg
 *.bmp
 *.jpeg

@@ -1079,7 +1079,7 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                                 DHTs[1][0]->Counts, DHTs[1][1]->Counts,
                                 SamplingX, SamplingY));
 
-#if 1
+#if 0
                 u8* Row = Bitmap->At;
                 for(int Y = 0;
                     Y < Bitmap->Height;
@@ -1105,6 +1105,9 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                     }
                     Row += Bitmap->Pitch;
                 }
+#endif
+
+#if 1
 
                 PlatformShowBitmap(Bitmap, "Decoded JPEG");
 #endif
