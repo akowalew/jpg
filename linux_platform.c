@@ -59,7 +59,7 @@ int PlatformWriteEntireFile(const char* Name, void* Data, usz Size)
 {
     int Result = 0;
 
-    int Fd = open(Name, O_RDWR);
+    int Fd = open(Name, O_WRONLY|O_CREAT);
     if(Fd != -1)
     {
         ssize_t WriteResult = write(Fd, Data, Size);

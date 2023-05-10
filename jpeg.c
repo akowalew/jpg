@@ -395,14 +395,14 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                      const u8* DQT_Y, const u8* DQT_Chroma, 
                      const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
                      const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
-                     u8 SamplingX, u8 SamplingY)
+                     u8 SX, u8 SY)
 {
-    Assert(SamplingX <= 2);
-    Assert(SamplingY <= 2);
+    Assert(SX <= 2);
+    Assert(SY <= 2);
 
     // TODO: Handling of images other than mod 8
-    u16 NumBlocksX = (u16)((Bitmap->Width + 7) / 8) / SamplingX;
-    u16 NumBlocksY = (u16)((Bitmap->Height + 7) / 8) / SamplingY;
+    u16 NumBlocksX = (u16)((Bitmap->Width + 7) / 8) / SX;
+    u16 NumBlocksY = (u16)((Bitmap->Height + 7) / 8) / SY;
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;
@@ -420,50 +420,50 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
             BlockX < NumBlocksX;
             BlockX++)
         {
-            i8  Y[2][2][8][8];
+            i8 Lum[2][2][8][8];
             i8 Cb[2][2][8][8];
             i8 Cr[2][2][8][8];
 
             u8* MidRow = Col;
-            for(u8 SY = 0;
-                SY < SamplingY;
-                SY++)
+            for(u8 KY = 0;
+                KY < SY;
+                KY++)
             {
                 u8* MidCol = MidRow;
 
-                for(u8 SX = 0;
-                    SX < SamplingX;
-                    SX++)
+                for(u8 KX = 0;
+                    KX < SX;
+                    KX++)
                 {
                     u8* SubRow = MidCol;
 
-                    i8* MidY =  (i8*) Y[SY][SX];
-                    i8* MidCb = (i8*) Cb[SY][SX];
-                    i8* MidCr = (i8*) Cr[SY][SX];
+                    i8* MidLum =  (i8*) Lum[KY][KX];
+                    i8* MidCb = (i8*) Cb[KY][KX];
+                    i8* MidCr = (i8*) Cr[KY][KX];
 
-                    for(u8 SubY = 0;
-                        SubY < 8;
-                        SubY++)
+                    for(u8 Y = 0;
+                        Y < 8;
+                        Y++)
                     {
                         u8* SubCol = SubRow;
 
-                        for(u8 SubX = 0;
-                            SubX < 8;
-                            SubX++)
+                        for(u8 X = 0;
+                            X < 8;
+                            X++)
                         {
                             u8 B = SubCol[0];
                             u8 G = SubCol[1];
                             u8 R = SubCol[2];
 
-                            float Y_Value =  (0.299f*R + 0.587f*G + 0.114f*B - 128);
+                            float Lum_Value =  (0.299f*R + 0.587f*G + 0.114f*B - 128);
                             float Cb_Value = (-0.168736f*R - 0.331264f*G + 0.5f*B);
                             float Cr_Value = (0.5f*R - 0.418688f*G - 0.081312f*B);
 
                             // TODO: Do we need CLAMP here or it is mathematically impossible to go out?
 
-                            MidY [SubY*8+SubX] = (i8) CLAMP(Y_Value,  -128, 127);
-                            MidCb[SubY*8+SubX] = (i8) CLAMP(Cb_Value, -128, 127);
-                            MidCr[SubY*8+SubX] = (i8) CLAMP(Cr_Value, -128, 127);
+                            MidLum [Y*8+X] = (i8) CLAMP(Lum_Value,  -128, 127);
+                            MidCb[Y*8+X] = (i8) CLAMP(Cb_Value, -128, 127);
+                            MidCr[Y*8+X] = (i8) CLAMP(Cr_Value, -128, 127);
 
                             SubCol += 4;
                         }
@@ -488,43 +488,43 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                     int SumCb = 0;
                     int SumCr = 0;
 
-                    for(u8 SY = 0;
-                        SY < SamplingY;
-                        SY++)
+                    for(u8 KY = 0;
+                        KY < SY;
+                        KY++)
                     {
-                        for(u8 SX = 0;
-                            SX < SamplingX;
-                            SX++)
+                        for(u8 KX = 0;
+                            KX < SX;
+                            KX++)
                         {
-                            SumCb += Cb[SY][SX][CY][CX];
-                            SumCr += Cr[SY][SX][CY][CX];
+                            SumCb += Cb[KY][KX][CY][CX];
+                            SumCr += Cr[KY][KX][CY][CX];
                         }
                     }
 
-                    Cb[0][0][CY][CX] = (i8) (SumCb / (SamplingX*SamplingY)); 
-                    Cr[0][0][CY][CX] = (i8) (SumCr / (SamplingX*SamplingY));
+                    Cb[0][0][CY][CX] = (i8) (SumCb / (SX*SY));
+                    Cr[0][0][CY][CX] = (i8) (SumCr / (SX*SY));
                 }
             }
 
-            for(u8 SY = 0;
-                SY < SamplingY;
-                SY++)
+            for(u8 KY = 0;
+                KY < SY;
+                KY++)
             {
-                for(u8 SX = 0;
-                    SX < SamplingX;
-                    SX++)
+                for(u8 KX = 0;
+                    KX < SX;
+                    KX++)
                 {
-                    Assert(PushPixels(BitStream, Y[SY][SX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+                    Assert(PushPixels(BitStream, Lum[KY][KX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
                 }
             }
 
             Assert(PushPixels(BitStream, Cb[0][0], DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
             Assert(PushPixels(BitStream, Cr[0][0], DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
 
-            Col += 8 * 4 * SamplingX;
+            Col += 8 * 4 * SX;
         }
 
-        Row += Bitmap->Pitch * 8 * SamplingY;
+        Row += Bitmap->Pitch * 8 * SY;
     }
 
     return 1;
@@ -534,14 +534,14 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
                     const u8* DQT_Y, const u8* DQT_Chroma, 
                     const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
                     const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
-                    u8 SamplingX, u8 SamplingY)
+                    u8 SX, u8 SY)
 {
-    Assert(SamplingX <= 2);
-    Assert(SamplingY <= 2);
+    Assert(SX <= 2);
+    Assert(SY <= 2);
 
     // TODO: Handling of images other than mod 8
-    u16 NumBlocksX = (u16)((Bitmap->Width + (8 * SamplingX - 1)) / (8 * SamplingX));
-    u16 NumBlocksY = (u16)((Bitmap->Height + (8 * SamplingY - 1)) / (8 * SamplingY));
+    u16 NumBlocksX = (u16)((Bitmap->Width + (8 * SX - 1)) / (8 * SX));
+    u16 NumBlocksY = (u16)((Bitmap->Height + (8 * SY - 1)) / (8 * SY));
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;
@@ -558,19 +558,19 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
             BlockX < NumBlocksX;
             BlockX++)
         {
-            i8 Y[2][2][8][8];
+            i8 Lum[2][2][8][8];
             i8 Cb[8][8];
             i8 Cr[8][8];
 
-            for(u8 SY = 0;
-                SY < SamplingY;
-                SY++)
+            for(u8 KY = 0;
+                KY < SY;
+                KY++)
             {
-                for(u8 SX = 0;
-                    SX < SamplingX;
-                    SX++)
+                for(u8 KX = 0;
+                    KX < SX;
+                    KX++)
                 {
-                    Assert(DecodePixels(BitStream, Y[SY][SX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+                    Assert(DecodePixels(BitStream, Lum[KY][KX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
                 }
             }
 
@@ -579,19 +579,21 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
 
             u8* SubRow = Col;
 
-            for(u32 SubY = 0;
-                SubY < 8 * SamplingY;
-                SubY++)
+            for(u32 Y = 0;
+                Y < 8 * SY;
+                Y++)
             {
                 u8* SubCol = SubRow;
 
-                for(u32 SubX = 0;
-                    SubX < 8 * SamplingX;
-                    SubX++)
+                for(u32 X = 0;
+                    X < 8 * SX;
+                    X++)
                 {
-                    u8 Y_value = Y[SubY/8][SubX/8][SubY%8][SubX%8] + 128;
-                    i8 Cb_value = Cb[SubY/SamplingY][SubX/SamplingX];
-                    i8 Cr_value = Cr[SubY/SamplingY][SubX/SamplingX];
+                    // TODO: SIMD!!!
+
+                    u8 Y_value = Lum[Y/8][X/8][Y&7][X&7] + 128;
+                    i8 Cb_value = Cb[Y/SY][X/SX];
+                    i8 Cr_value = Cr[Y/SY][X/SX];
 
                     f32 B = Y_value + 1.772F * Cb_value;
                     f32 G = Y_value - 0.344136F * Cb_value - 0.714136F * Cr_value;
@@ -607,10 +609,10 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
                 SubRow += Bitmap->Pitch;
             }
 
-            Col += 8 * 4 * SamplingX;
+            Col += 8 * 4 * SX;
         }
 
-        Row += Bitmap->Pitch * 8 * SamplingY;
+        Row += Bitmap->Pitch * 8 * SY;
     }
 
     return 1;
@@ -755,8 +757,8 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 
 static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
 {
-    u8 SamplingX = 2;
-    u8 SamplingY = 2;
+    u8 SX = 2;
+    u8 SY = 2;
 
     Quality = CLAMP(Quality, 1, 100);
 
@@ -815,8 +817,8 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     SOF0->ImageWidth = ByteSwap16(Bitmap->Width);
     SOF0->NumComponents = 3;
     SOF0->Components[0].ComponentId = 1;
-    SOF0->Components[0].VerticalSubsamplingFactor = SamplingY;
-    SOF0->Components[0].HorizontalSubsamplingFactor = SamplingX;
+    SOF0->Components[0].VerticalSubsamplingFactor = SY;
+    SOF0->Components[0].HorizontalSubsamplingFactor = SX;
     SOF0->Components[0].QuantizationTableId = 0;
     SOF0->Components[1].ComponentId = 2;
     SOF0->Components[1].VerticalSubsamplingFactor = 1;
@@ -869,7 +871,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
                      DQT[0]->Coefficients, DQT[1]->Coefficients,
                      &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
                      &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1],
-                     SamplingX, SamplingY));
+                     SX, SY));
 
     u16 Zero = 0;
     u8 NextFullByte = (BitStream.Len + 7) / 8;
@@ -877,7 +879,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     Assert(PushBits(&BitStream, Zero, ZeroCount));
     Assert(Flush(&BitStream));
 
-#if 1
+#if 0
     bit_stream Orig = BitStream;
 
     BitStream.At = Buffer->At;
@@ -891,7 +893,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
                     DQT[0]->Coefficients, DQT[1]->Coefficients,
                     &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
                     &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1],
-                    SamplingX, SamplingY));  
+                    SX, SY));
 
     BitStream = Orig;
 
@@ -938,7 +940,7 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 
         Marker = *MarkerAt;
 
-        printf("Marker: 0x%04X", Marker);
+        // printf("Marker: 0x%04X", Marker);
 
         if(Marker == JPEG_EOI)
         {
@@ -957,7 +959,7 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
         void* Payload = PopBytes(Buffer, Length);
         Assert(Payload);
 
-        printf(" Length: %d\n", Length);
+        // printf(" Length: %d\n", Length);
 
         switch(Marker)
         {
@@ -1032,14 +1034,14 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 Assert(SOF0->Components[2].VerticalSubsamplingFactor == 1);
                 Assert(SOF0->Components[2].HorizontalSubsamplingFactor == 1);
 
-                u8 SamplingX = SOF0->Components[0].HorizontalSubsamplingFactor;
-                u8 SamplingY = SOF0->Components[0].VerticalSubsamplingFactor;
+                u8 SX = SOF0->Components[0].HorizontalSubsamplingFactor;
+                u8 SY = SOF0->Components[0].VerticalSubsamplingFactor;
 
-                u16 NumBlocksX = (u16)((SOF0->ImageWidth + (8 * SamplingX - 1)) / (8 * SamplingX));
-                u16 NumBlocksY = (u16)((SOF0->ImageHeight + (8 * SamplingY - 1)) / (8 * SamplingY));
+                u16 NumBlocksX = (u16)((SOF0->ImageWidth + (8 * SX - 1)) / (8 * SX));
+                u16 NumBlocksY = (u16)((SOF0->ImageHeight + (8 * SY - 1)) / (8 * SY));
 
-                Bitmap->Width = NumBlocksX * 8 * SamplingX;
-                Bitmap->Height = NumBlocksY * 8 * SamplingY;
+                Bitmap->Width = NumBlocksX * 8 * SX;
+                Bitmap->Height = NumBlocksY * 8 * SY;
                 Bitmap->Pitch = Bitmap->Width * 4;
                 Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
                 Bitmap->At = PlatformAlloc(Bitmap->Size);
@@ -1055,7 +1057,7 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                                 DQTs[0], DQTs[1],
                                 DHTs[0][0]->Counts, DHTs[0][1]->Counts,
                                 DHTs[1][0]->Counts, DHTs[1][1]->Counts,
-                                SamplingX, SamplingY));
+                                SX, SY));
 
 #if 0
                 u8* Row = Bitmap->At;
