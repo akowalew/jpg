@@ -96,28 +96,66 @@ int PlatformShowBitmap(bitmap* Bitmap, const char* Title)
         return 0;
     }
 
-    WNDCLASSEXA WindowClass = {0};
-    WindowClass.cbSize = sizeof(WindowClass);
-    WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-    WindowClass.lpfnWndProc = MainWindowProc;
-    WindowClass.cbClsExtra = 0;
-    WindowClass.cbWndExtra = 0;
-    WindowClass.hInstance = GetModuleHandle(0);
-    WindowClass.hIcon = 0;
-    WindowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
-    WindowClass.hbrBackground = 0;
-    WindowClass.lpszMenuName = 0;
-    WindowClass.lpszClassName = "TestWindowClass";
-    WindowClass.hIconSm = 0;
-    Assert(RegisterClassEx(&WindowClass));
+    if(Bitmap->Pitch != Bitmap->Width*4)
+    {
+        // FIXME: Win32 GDI API cannot handle pitch different than that...
+        // maybe use OpenGL then? Instead now we need to fix it manually...
+
+        u8* SrcRow = Bitmap->At;
+        i32 SrcPitch = Bitmap->Pitch;
+        u8* DstRow = Bitmap->At;
+        i32 DstPitch = Bitmap->Width*4;
+
+        for(i32 Y = 0;
+            Y < Bitmap->Height;
+            Y++)
+        {
+            u32* SrcCol = (u32*) SrcRow;
+            u32* DstCol = (u32*) DstRow;
+
+            for(i32 X = 0;
+                X < Bitmap->Width;
+                X++)
+            {
+                *(DstCol++) = *(SrcCol++);
+            }
+
+            SrcRow += SrcPitch;
+            DstRow += DstPitch;
+        }
+
+        Bitmap->Pitch = DstPitch;
+    }
+
+    HMODULE ModuleHandle = GetModuleHandle(0);
+    static const char* ClassName = "TestWindowClass";
+    static int ClassRegistered = 0;
+    if(!ClassRegistered)
+    {
+        WNDCLASSEXA WindowClass = {0};
+        WindowClass.cbSize = sizeof(WindowClass);
+        WindowClass.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
+        WindowClass.lpfnWndProc = MainWindowProc;
+        WindowClass.cbClsExtra = 0;
+        WindowClass.cbWndExtra = 0;
+        WindowClass.hInstance = ModuleHandle;
+        WindowClass.hIcon = 0;
+        WindowClass.hCursor = LoadCursor(NULL, IDC_ARROW);
+        WindowClass.hbrBackground = 0;
+        WindowClass.lpszMenuName = 0;
+        WindowClass.lpszClassName = ClassName;
+        WindowClass.hIconSm = 0;
+        Assert(RegisterClassEx(&WindowClass));
+        ClassRegistered = 1;
+    }
 
     HWND Window = CreateWindowEx(0,
-                                 WindowClass.lpszClassName,
+                                 ClassName,
                                  Title,
                                  WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                                  CW_USEDEFAULT, CW_USEDEFAULT,
                                  CW_USEDEFAULT, CW_USEDEFAULT,
-                                 0, 0, GetModuleHandle(0), 0);
+                                 0, 0, ModuleHandle, 0);
     Assert(Window);
 
     HDC DeviceContext = GetDC(Window);
@@ -136,7 +174,7 @@ int PlatformShowBitmap(bitmap* Bitmap, const char* Title)
         BitmapInfo.bmiHeader.biPlanes = 1;
         BitmapInfo.bmiHeader.biBitCount = 32;
         BitmapInfo.bmiHeader.biCompression = BI_RGB;
-        BitmapInfo.bmiHeader.biSizeImage = 0;
+        BitmapInfo.bmiHeader.biSizeImage = Bitmap->Size;
         BitmapInfo.bmiHeader.biXPelsPerMeter = 0;
         BitmapInfo.bmiHeader.biYPelsPerMeter = 0;
         BitmapInfo.bmiHeader.biClrUsed = 0;

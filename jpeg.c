@@ -579,14 +579,17 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
 
             u8* SubRow = Col;
 
+            u32 SubY = SY << 3;
+            u32 SubX = SX << 3;
+
             for(u32 Y = 0;
-                Y < 8 * SY;
+                Y < SubY;
                 Y++)
             {
                 u8* SubCol = SubRow;
 
                 for(u32 X = 0;
-                    X < 8 * SX;
+                    X < SubX;
                     X++)
                 {
                     // TODO: SIMD!!!
@@ -1037,11 +1040,11 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 u8 SX = SOF0->Components[0].HorizontalSubsamplingFactor;
                 u8 SY = SOF0->Components[0].VerticalSubsamplingFactor;
 
-                u16 NumBlocksX = (u16)((SOF0->ImageWidth + (8 * SX - 1)) / (8 * SX));
-                u16 NumBlocksY = (u16)((SOF0->ImageHeight + (8 * SY - 1)) / (8 * SY));
+                u16 SubX = SX << 3;
+                u16 SubY = SY << 3;
 
-                Bitmap->Width = NumBlocksX * 8 * SX;
-                Bitmap->Height = NumBlocksY * 8 * SY;
+                Bitmap->Width = ((SOF0->ImageWidth + SubX - 1) / SubX) * SubX;
+                Bitmap->Height = ((SOF0->ImageHeight + SubY - 1) / SubY) * SubY;
                 Bitmap->Pitch = Bitmap->Width * 4;
                 Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
                 Bitmap->At = PlatformAlloc(Bitmap->Size);
@@ -1058,6 +1061,9 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                                 DHTs[0][0]->Counts, DHTs[0][1]->Counts,
                                 DHTs[1][0]->Counts, DHTs[1][1]->Counts,
                                 SX, SY));
+
+                Bitmap->Width = SOF0->ImageWidth;
+                Bitmap->Height = SOF0->ImageHeight;
 
 #if 0
                 u8* Row = Bitmap->At;
