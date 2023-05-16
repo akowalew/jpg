@@ -5,8 +5,8 @@
 #include "platform.h"
 #include "bmp.h"
 #include "bmp.c"
-#include "jpeg.h"
-#include "jpeg.c"
+#include "jpg.h"
+#include "jpg.c"
 
 int main(int Argc, char** Argv)
 {
@@ -34,7 +34,7 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
-#if 1
+#if 0
     PlatformShowBitmap(&Bitmap, "BMP");
 #endif
     

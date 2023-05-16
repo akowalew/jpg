@@ -1,3 +1,7 @@
+#ifndef JPG_PRETTY_EXTEND_EDGES
+#define JPG_PRETTY_EXTEND_EDGES 0
+#endif
+
 static const f32 DCT8x8Table[8][8] = 
 {
     { +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f },
@@ -400,9 +404,91 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
     Assert(SX <= 2);
     Assert(SY <= 2);
 
-    // TODO: Handling of images other than mod 8
-    u16 NumBlocksX = (u16)((Bitmap->Width + 7) / 8) / SX;
-    u16 NumBlocksY = (u16)((Bitmap->Height + 7) / 8) / SY;
+    u16 ZX = 8;
+    u16 ZY = 8;
+
+    u16 ZXSX = ZX*SX;
+    u16 ZYSY = ZY*SY;
+
+    u16 NumBlocksX = (u16)((Bitmap->Width + ZXSX - 1) / ZXSX);
+    u16 NumBlocksY = (u16)((Bitmap->Height + ZYSY - 1) / ZYSY);
+
+    i32 FinalWidth = NumBlocksX*ZXSX;
+    i32 FinalHeight = NumBlocksY*ZYSY;
+
+    Assert(Bitmap->Pitch >= FinalWidth*4);
+    Assert(Bitmap->Size >= FinalHeight*Bitmap->Pitch);
+
+#if JPG_PRETTY_EXTEND_EDGES
+    i32 WidthDiff = FinalWidth - Bitmap->Width;
+    i32 HeightDiff = FinalHeight - Bitmap->Height;
+
+    if(WidthDiff)
+    {
+        u8* Row = Bitmap->At + (Bitmap->Width - 1) * 4;
+
+        for(i32 Y = 0;
+            Y < Bitmap->Height;
+            Y++)
+        {
+            u32* Col = (u32*) Row;
+
+            u32 Value = *(Col++);
+
+            for(i32 X = 0;
+                X < WidthDiff;
+                X++)
+            {
+                // TODO: Non-caching store
+                // TODO: SIMD store multiply
+
+                *(Col++) = Value;
+            }
+
+            Row += Bitmap->Pitch;
+        }
+    }
+
+    if(HeightDiff)
+    {
+        u8* Col = Bitmap->At + (Bitmap->Height - 1) * Bitmap->Pitch;
+
+        for(i32 X = 0;
+            X < FinalWidth;
+            X++)
+        {
+            // TODO: SIMD load vector
+
+            u32 Value = *(u32*)(Col);
+
+            u8* Row = Col + Bitmap->Pitch;
+
+            for(i32 Y = 0;
+                Y < HeightDiff;
+                Y++)
+            {
+                // TODO: Non-caching store
+                // TODO: SIMD store vector
+
+                *(u32*)(Row) = Value;
+
+                Row += Bitmap->Pitch;
+            }
+
+            Col += 4;
+        }
+    }
+#endif
+
+#if 0
+    bitmap Tmp;
+    Tmp.Width = FinalWidth;
+    Tmp.Height = FinalHeight;
+    Tmp.Pitch = Bitmap->Pitch;
+    Tmp.Size = Bitmap->Size;
+    Tmp.At = Bitmap->At;
+    PlatformShowBitmap(&Tmp, "Extended bitmap");
+#endif
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;
@@ -537,8 +623,14 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
     Assert(SX <= 2);
     Assert(SY <= 2);
 
-    u16 NumBlocksX = (u16)((Bitmap->Width + (8 * SX - 1)) / (8 * SX));
-    u16 NumBlocksY = (u16)((Bitmap->Height + (8 * SY - 1)) / (8 * SY));
+    u16 ZX = 8;
+    u16 ZY = 8;
+
+    u16 ZXSX = ZX*SX;
+    u16 ZYSY = ZY*SY;
+
+    u16 NumBlocksX = (u16)((Bitmap->Width + ZXSX - 1) / ZXSX);
+    u16 NumBlocksY = (u16)((Bitmap->Height + ZYSY - 1) / ZYSY);
 
     i16 DC_Y = 0;
     i16 DC_Cb = 0;

@@ -3,8 +3,8 @@
 *.exe
 *.pdb
 *.obj
-jpeg
-bmp2jpeg
+jpg
+bmp2jpg
 jpg2bmp
 *.jpg
 *.bmp

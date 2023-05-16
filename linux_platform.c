@@ -59,7 +59,7 @@ int PlatformWriteEntireFile(const char* Name, void* Data, usz Size)
 {
     int Result = 0;
 
-    int Fd = open(Name, O_WRONLY|O_CREAT);
+    int Fd = open(Name, O_WRONLY|O_CREAT|O_TRUNC, 0644);
     if(Fd != -1)
     {
         ssize_t WriteResult = write(Fd, Data, Size);
@@ -110,7 +110,7 @@ int PlatformShowBitmap(bitmap* Bitmap, const char* Title)
 
     XImage* xWindowBuffer = XCreateImage(xDisplay, xVisualInfo.visual, xVisualInfo.depth,
                                  ZPixmap, 0, (char*)Bitmap->At, Bitmap->Width, Bitmap->Height,
-                                 32, 0);
+                                 32, Bitmap->Pitch);
 
     GC xDefaultGC = DefaultGC(xDisplay, xDefaultScreen);
 

@@ -3,5 +3,5 @@ CFLAGS += -Wno-unused-variable -Wno-unused-parameter -Wno-unused-function -Wno-u
 CFLAGS += -O0 -g3
 
 all:
-	@$(CC) bmp2jpeg.c linux_platform.c -o bmp2jpeg $(CFLAGS) -lX11
+	@$(CC) bmp2jpg.c linux_platform.c -o bmp2jpg $(CFLAGS) -lX11
 	@$(CC) jpg2bmp.c linux_platform.c -o jpg2bmp $(CFLAGS) -lX11

@@ -17,23 +17,23 @@ int ParseBMP(u8* Data, usz Size, bitmap* Dst)
     u8* SrcRow = Data + BMP->FileHeader.DataOffset;
     Size -= SrcSize;
 
-    int KX = 8;
-    int KY = 8;
+    int ZX = 8;
+    int ZY = 8;
     
     int SX = 2;
     int SY = 2;
 
-    int KXSX = KX*SX;
-    int KYSY = KY*SY;
+    int ZXSX = ZX*SX;
+    int ZYSY = ZY*SY;
 
-    Dst->Width = Width;
-    Dst->Height = Height;
-    Dst->Pitch = (((Dst->Width + KX*SX - 1) / (KX*SX)) * KX*SX) * 4;
-    Dst->Size = Dst->Pitch * Dst->Height;
+    Dst->Width = BMP->InfoHeader.Width;
+    Dst->Height = BMP->InfoHeader.Height;
+    Dst->Pitch = (((Dst->Width + ZXSX - 1) / ZXSX) * ZXSX) * 4;
+    Dst->Size = (((Dst->Height + ZYSY - 1) / ZYSY) * ZYSY) * Dst->Pitch;
     Dst->At = PlatformAlloc(Dst->Size);
     Assert(Dst->At);
 
-    u8* DstRow = Dst->At + Dst->Size - Dst->Pitch;
+    u8* DstRow = Dst->At + Dst->Pitch * (Dst->Height - 1);
 
     for(i32 Y = 0;
         Y < Dst->Height;
