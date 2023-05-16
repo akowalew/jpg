@@ -416,14 +416,14 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
     {
         u8* Col = Row;
 
+        i8 Lum[2][2][8][8];
+        i8 Cb[2][2][8][8];
+        i8 Cr[2][2][8][8];
+
         for(u16 BlockX = 0;
             BlockX < NumBlocksX;
             BlockX++)
         {
-            i8 Lum[2][2][8][8];
-            i8 Cb[2][2][8][8];
-            i8 Cr[2][2][8][8];
-
             u8* MidRow = Col;
             for(u8 KY = 0;
                 KY < SY;
@@ -455,13 +455,11 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                             u8 G = SubCol[1];
                             u8 R = SubCol[2];
 
-                            float Lum_Value =  (0.299f*R + 0.587f*G + 0.114f*B - 128);
+                            float Lum_Value = (0.299f*R + 0.587f*G + 0.114f*B - 128);
                             float Cb_Value = (-0.168736f*R - 0.331264f*G + 0.5f*B);
                             float Cr_Value = (0.5f*R - 0.418688f*G - 0.081312f*B);
 
-                            // TODO: Do we need CLAMP here or it is mathematically impossible to go out?
-
-                            MidLum [Y*8+X] = (i8) CLAMP(Lum_Value,  -128, 127);
+                            MidLum[Y*8+X] = (i8) CLAMP(Lum_Value, -128, 127);
                             MidCb[Y*8+X] = (i8) CLAMP(Cb_Value, -128, 127);
                             MidCr[Y*8+X] = (i8) CLAMP(Cr_Value, -128, 127);
 
@@ -539,7 +537,6 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
     Assert(SX <= 2);
     Assert(SY <= 2);
 
-    // TODO: Handling of images other than mod 8
     u16 NumBlocksX = (u16)((Bitmap->Width + (8 * SX - 1)) / (8 * SX));
     u16 NumBlocksY = (u16)((Bitmap->Height + (8 * SY - 1)) / (8 * SY));
 
@@ -1064,34 +1061,6 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 
                 Bitmap->Width = SOF0->ImageWidth;
                 Bitmap->Height = SOF0->ImageHeight;
-
-#if 0
-                u8* Row = Bitmap->At;
-                for(int Y = 0;
-                    Y < Bitmap->Height;
-                    Y++)
-                {
-                    u8* Col = Row;
-                    for(int X = 0;
-                        X < Bitmap->Width;
-                        X++)
-                    {
-                        if((Y % 16) == 0 &&
-                           (X % 16) == 0)
-                        {
-                            *(u32*)(Col) |= 0x0000FF00;
-                        }
-                        else if((Y % 8) == 7 ||
-                           (X % 8) == 7)
-                        {
-                            *(u32*)(Col) |= 0x00FF0000;
-                        }
-
-                        Col += 4;
-                    }
-                    Row += Bitmap->Pitch;
-                }
-#endif
 
 #if 1
 

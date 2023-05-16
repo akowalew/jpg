@@ -25,5 +25,13 @@ typedef struct
 } bmp_info_header;
 #pragma pack(pop)
 
+#pragma pack(push, 1)
+typedef struct
+{
+    bmp_file_header FileHeader;
+    bmp_info_header InfoHeader;
+} bmp_headers;
+#pragma pack(pop)
+
 int ParseBMP(u8* Data, usz Size, bitmap* Dst);
 void* ExportBMP(bitmap* Bitmap, usz* Size);

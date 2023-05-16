@@ -1,77 +1,37 @@
 int ParseBMP(u8* Data, usz Size, bitmap* Dst)
 {
-    u8* At = Data;
+    Assert(Size >= sizeof(bmp_headers));
+    bmp_headers* BMP = (bmp_headers*) Data;
+    Size -= sizeof(*BMP);
 
-    bmp_file_header* FileHeader;
-    if(Size < sizeof(*FileHeader))
-    {
-        // TODO: Logging?
-        return 0;
-    }
+    Assert(BMP->FileHeader.Signature[0] == 'B');
+    Assert(BMP->FileHeader.Signature[1] == 'M');
+    Assert(BMP->InfoHeader.Planes == 1);
+    Assert(BMP->InfoHeader.BitCount == 24);
+    Assert(BMP->InfoHeader.Width <= 0x7FFFFFFF);
+    Assert(BMP->InfoHeader.Height <= 0x7FFFFFFF);
 
-    FileHeader = (bmp_file_header*) At;
-    At += sizeof(*FileHeader);
-    Size -= sizeof(*FileHeader);
-
-    if(FileHeader->Signature[0] != 'B' ||
-       FileHeader->Signature[1] != 'M')
-    {
-        // TODO: Logging?
-        return 0;
-    }
-
-    bmp_info_header* InfoHeader;
-    if(Size < sizeof(*InfoHeader))
-    {
-        // TODO: Logging?
-        return 0;
-    }
-
-    InfoHeader = (bmp_info_header*) At;
-    At += sizeof(InfoHeader);
-    Size -= sizeof(InfoHeader);
-
-    if(InfoHeader->Planes != 1)
-    {
-        // TODO: Logging?
-        return 0;
-    }
-
-    if(InfoHeader->BitCount != 24)
-    {
-        // TODO: Logging?
-        return 0;
-    }
-
-    if(InfoHeader->Width > 0x7FFFFFFF ||
-       InfoHeader->Height > 0x7FFFFFFF )
-    {
-        // TODO: Logging?
-        return 0;
-    }
-
-    usz SrcPitch = ((InfoHeader->Width*3 + 3) / 4) * 4;
-    usz SrcSize = SrcPitch * InfoHeader->Height;
-    if(Size < SrcSize)
-    {
-        // TODO: Logging
-        return 0;
-    }
-
-    u8* SrcRow = Data + FileHeader->DataOffset;
-    At += SrcSize;
+    usz SrcPitch = ((BMP->InfoHeader.Width*3 + 3) / 4) * 4;
+    usz SrcSize = SrcPitch * BMP->InfoHeader.Height;
+    Assert(Size >= SrcSize);
+    u8* SrcRow = Data + BMP->FileHeader.DataOffset;
     Size -= SrcSize;
 
-    Dst->Width = InfoHeader->Width;
-    Dst->Height = InfoHeader->Height;
-    Dst->Pitch = Dst->Width * 4;
+    int KX = 8;
+    int KY = 8;
+    
+    int SX = 2;
+    int SY = 2;
+
+    int KXSX = KX*SX;
+    int KYSY = KY*SY;
+
+    Dst->Width = Width;
+    Dst->Height = Height;
+    Dst->Pitch = (((Dst->Width + KX*SX - 1) / (KX*SX)) * KX*SX) * 4;
     Dst->Size = Dst->Pitch * Dst->Height;
     Dst->At = PlatformAlloc(Dst->Size);
-    if(!Dst->At)
-    {
-        // TODO: Logging
-        return 0;
-    }
+    Assert(Dst->At);
 
     u8* DstRow = Dst->At + Dst->Size - Dst->Pitch;
 

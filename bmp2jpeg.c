@@ -34,7 +34,7 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
-#if 0
+#if 1
     PlatformShowBitmap(&Bitmap, "BMP");
 #endif
     
