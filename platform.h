@@ -1,5 +1,7 @@
 #include <stdint.h>
+#include <inttypes.h>
 #include <stddef.h>
+#include <stdio.h>
 
 #define function static
 
@@ -48,6 +50,18 @@ typedef struct
     usz Elapsed;
     u8* At;
 } buffer;
+
+
+//
+// NOTE: Following functions need to be implemented for each platform
+//
+
+void* PlatformAlloc(usz Size);
+void  PlatformFree(void* Data);
+void* PlatformReadEntireFile(const char* Name, usz* Size);
+int PlatformWriteEntireFile(const char* Name, void* Data, usz Size);
+int PlatformShowBitmap(bitmap* Bitmap, const char* Title);
+u64 PlatformGetTicks(void);
 
 static void* PopBytes(buffer* Buffer, usz Count)
 {
@@ -266,8 +280,64 @@ static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
     return Result;
 }
 
-void* PlatformAlloc(usz Size);
-void  PlatformFree(void* Data);
-void* PlatformReadEntireFile(const char* Name, usz* Size);
-int PlatformWriteEntireFile(const char* Name, void* Data, usz Size);
-int PlatformShowBitmap(bitmap* Bitmap, const char* Title);
+typedef struct
+{
+    const char* Description;
+    u64 Ticks;
+ } timing;
+
+usz TimingIdx;
+u64 TimingLast;
+timing TimingData[1024]; 
+
+static void TimingTick(const char* Description)
+{
+    Assert(TimingIdx < ArrayCount(TimingData));
+    
+    u64 Ticks = PlatformGetTicks();
+    u64 Diff = Ticks - TimingLast;
+    TimingLast = Ticks;
+
+    timing* Timing = &TimingData[TimingIdx++];
+    Timing->Description = Description;
+    Timing->Ticks = Diff;
+}
+
+static void TimingInit(const char* Description)
+{
+    TimingIdx = 0;
+
+    TimingLast = PlatformGetTicks();
+
+    TimingTick(Description);
+}
+
+static void TimingFini(const char* Description)
+{
+    TimingTick(Description);
+
+    printf("Timing report:\n");
+    Assert(TimingIdx < ArrayCount(TimingData));
+    for(usz Idx = 0;
+        Idx < TimingIdx;
+        Idx++)
+    {
+        timing* Timing = &TimingData[Idx];
+        printf("%s => %" PRIu64 " ticks\n", Timing->Description, Timing->Ticks);
+    }
+    fflush(stdout);
+}
+
+#ifndef TIMING_ENABLED
+#define TIMING_ENABLED 1
+#endif
+
+#if TIMING_ENABLED
+#define TIMING_INIT(Description) TimingInit(Description)
+#define TIMING_TICK(Description) TimingTick(Description)
+#define TIMING_FINI(Description) TimingFini(Description)
+#else
+#define TIMING_INIT(Description)
+#define TIMING_TICK(Description)
+#define TIMING_FINI(Description)
+#endif

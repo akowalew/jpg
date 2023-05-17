@@ -1010,6 +1010,8 @@ static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
 
 static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 {
+    TIMING_TICK("Start of headers");
+
     u16* MarkerAt = PopU16(Buffer);
     Assert(MarkerAt);
 
@@ -1090,6 +1092,8 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 
             case JPEG_DHT:
             {
+                TIMING_TICK("Start of DHT");
+
                 Assert(Length >= sizeof(*DHT));
                 DHT = Payload;
                 Length -= sizeof(*DHT);
@@ -1109,6 +1113,8 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 Assert(DHT->TableClass < 2);
                 Assert(DHT->TableId < 2);
                 DHTs[DHT->TableId][DHT->TableClass] = DHT;
+
+                TIMING_TICK("End of DHT");
             } break;
 
             case JPEG_SOS:
@@ -1135,6 +1141,8 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 u16 ZXSX = ZX*SX;
                 u16 ZYSY = ZY*SY;
 
+                TIMING_TICK("Start of scan");
+
                 Bitmap->Width = ((SOF0->ImageWidth + ZXSX - 1) / ZXSX) * ZXSX;
                 Bitmap->Height = ((SOF0->ImageHeight + ZYSY - 1) / ZYSY) * ZYSY;
                 Bitmap->Pitch = Bitmap->Width * 4;
@@ -1157,7 +1165,9 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 Bitmap->Width = SOF0->ImageWidth;
                 Bitmap->Height = SOF0->ImageHeight;
 
-#if 1
+                TIMING_TICK("End of scan");
+
+#if 0
                 PlatformShowBitmap(Bitmap, "Decoded JPEG");
 #endif
 

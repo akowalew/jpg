@@ -19,6 +19,8 @@ int main(int Argc, char** Argv)
     char* InputFile = Argv[1];
     char* OutputFile = Argv[2];
 
+    TIMING_INIT("Reading file");
+
     usz InputSize;
     void* InputData = PlatformReadEntireFile(InputFile, &InputSize);
     if(!InputData)
@@ -27,12 +29,16 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
+    TIMING_TICK("Parsing BMP");
+
     bitmap Bitmap;
     if(!ParseBMP(InputData, InputSize, &Bitmap))
     {
         fprintf(stderr, "Failed to parse BMP\n");
         return EXIT_FAILURE;
     }
+
+    TIMING_TICK("After read file");
 
 #if 0
     PlatformShowBitmap(&Bitmap, "BMP");

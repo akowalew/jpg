@@ -190,3 +190,10 @@ int PlatformShowBitmap(bitmap* Bitmap, const char* Title)
 
     return (int) Message.wParam;
 }
+
+u64 PlatformGetTicks(void)
+{
+    LARGE_INTEGER Ticks;
+    Assert(QueryPerformanceCounter(&Ticks));
+    return Ticks.QuadPart;
+}

@@ -16,6 +16,8 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
+    TIMING_INIT("Reading file");
+
     char* InputFile = Argv[1];
     char* OutputFile = Argv[2];
 
@@ -27,12 +29,16 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
+    TIMING_TICK("Decoding JPEG");
+
     bitmap Bitmap;
     if(!DecodeJPEG(InputData, InputSize, &Bitmap))
     {
         fprintf(stderr, "Failed to decode JPEG\n");
         return EXIT_FAILURE;
     }
+
+    TIMING_TICK("Exporting BMP");
     
     usz OutputSize;
     void* OutputData = ExportBMP(&Bitmap, &OutputSize);
@@ -42,11 +48,15 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
+    TIMING_TICK("Writing file");
+
     if(!PlatformWriteEntireFile(OutputFile, OutputData, OutputSize))
     {
         fprintf(stderr, "Failed to write output file\n");
         return EXIT_FAILURE;
     }
+
+    TIMING_FINI("Done");
 
     return EXIT_SUCCESS;
 }
