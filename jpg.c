@@ -1128,12 +1128,15 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 
                 u8 SX = SOF0->Components[0].HorizontalSubsamplingFactor;
                 u8 SY = SOF0->Components[0].VerticalSubsamplingFactor;
+                
+                u8 ZX = 8;
+                u8 ZY = 8;
 
-                u16 SubX = SX << 3;
-                u16 SubY = SY << 3;
+                u16 ZXSX = ZX*SX;
+                u16 ZYSY = ZY*SY;
 
-                Bitmap->Width = ((SOF0->ImageWidth + SubX - 1) / SubX) * SubX;
-                Bitmap->Height = ((SOF0->ImageHeight + SubY - 1) / SubY) * SubY;
+                Bitmap->Width = ((SOF0->ImageWidth + ZXSX - 1) / ZXSX) * ZXSX;
+                Bitmap->Height = ((SOF0->ImageHeight + ZYSY - 1) / ZYSY) * ZYSY;
                 Bitmap->Pitch = Bitmap->Width * 4;
                 Bitmap->Size = Bitmap->Pitch * Bitmap->Height;
                 Bitmap->At = PlatformAlloc(Bitmap->Size);
@@ -1155,18 +1158,12 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 Bitmap->Height = SOF0->ImageHeight;
 
 #if 1
-
                 PlatformShowBitmap(Bitmap, "Decoded JPEG");
 #endif
 
-#if 0
-                usz BackCount = (BitStream.Len & 7) ? 0 : 1;
-                BackCount += (BitStream.Len + 7) / 8;
-                Buffer->At = BitStream.At - BackCount;
-                Buffer->Elapsed = BitStream.Elapsed - BackCount;
-#else
+                Assert(BitStream.Elapsed >= 2);
+                Assert(*(u16*)(BitStream.At) == JPEG_EOI);
                 return 1;
-#endif
             } break;
         }
     }
