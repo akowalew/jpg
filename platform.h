@@ -287,27 +287,21 @@ typedef struct
  } timing;
 
 usz TimingIdx;
-u64 TimingLast;
 timing TimingData[1024]; 
 
 static void TimingTick(const char* Description)
 {
-    Assert(TimingIdx < ArrayCount(TimingData));
-    
     u64 Ticks = PlatformGetTicks();
-    u64 Diff = Ticks - TimingLast;
-    TimingLast = Ticks;
-
+    
+    Assert(TimingIdx < ArrayCount(TimingData));
     timing* Timing = &TimingData[TimingIdx++];
     Timing->Description = Description;
-    Timing->Ticks = Diff;
+    Timing->Ticks = Ticks;
 }
 
 static void TimingInit(const char* Description)
 {
     TimingIdx = 0;
-
-    TimingLast = PlatformGetTicks();
 
     TimingTick(Description);
 }
@@ -318,12 +312,15 @@ static void TimingFini(const char* Description)
 
     printf("Timing report:\n");
     Assert(TimingIdx < ArrayCount(TimingData));
+    Assert(TimingIdx > 1);
+    usz LastIdx = TimingIdx-1;
     for(usz Idx = 0;
-        Idx < TimingIdx;
+        Idx < LastIdx;
         Idx++)
     {
         timing* Timing = &TimingData[Idx];
-        printf("%s => %" PRIu64 " ticks\n", Timing->Description, Timing->Ticks);
+        u64 Diff = TimingData[Idx+1].Ticks-TimingData[Idx].Ticks;
+        printf("%s => %" PRIu64 " ticks\n", TimingData[Idx].Description, Diff);
     }
     fflush(stdout);
 }
