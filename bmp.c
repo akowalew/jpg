@@ -4,18 +4,14 @@ int ParseBMP(u8* Data, usz Size, bitmap* Dst)
     bmp_headers* BMP = (bmp_headers*) Data;
     Size -= sizeof(*BMP);
 
-    Assert(BMP->FileHeader.Signature[0] == 'B');
-    Assert(BMP->FileHeader.Signature[1] == 'M');
-    Assert(BMP->InfoHeader.Planes == 1);
-    Assert(BMP->InfoHeader.BitCount == 24);
-    Assert(BMP->InfoHeader.Width <= 0x7FFFFFFF);
-    Assert(BMP->InfoHeader.Height <= 0x7FFFFFFF);
+    bmp_file_header* FileHeader = &BMP->FileHeader;
+    Assert(FileHeader->Signature[0] == 'B');
+    Assert(FileHeader->Signature[1] == 'M');
 
-    usz SrcPitch = ((BMP->InfoHeader.Width*3 + 3) / 4) * 4;
-    usz SrcSize = SrcPitch * BMP->InfoHeader.Height;
-    Assert(Size >= SrcSize);
-    u8* SrcRow = Data + BMP->FileHeader.DataOffset;
-    Size -= SrcSize;
+    bmp_info_header* InfoHeader = &BMP->InfoHeader;
+    Assert(InfoHeader->Planes == 1);
+    Assert(InfoHeader->Width <= 0x7FFFFFFF);
+    Assert(InfoHeader->Height <= 0x7FFFFFFF);
 
     int ZX = 8;
     int ZY = 8;
@@ -26,38 +22,88 @@ int ParseBMP(u8* Data, usz Size, bitmap* Dst)
     int ZXSX = ZX*SX;
     int ZYSY = ZY*SY;
 
-    Dst->Width = BMP->InfoHeader.Width;
-    Dst->Height = BMP->InfoHeader.Height;
+    Dst->Width = InfoHeader->Width;
+    Dst->Height = InfoHeader->Height;
     Dst->Pitch = (((Dst->Width + ZXSX - 1) / ZXSX) * ZXSX) * 4;
     Dst->Size = (((Dst->Height + ZYSY - 1) / ZYSY) * ZYSY) * Dst->Pitch;
+#if 0
+    static u8 StaticMemory[4096 * 4096 * 4];
+    Dst->At = StaticMemory;
+#else
     Dst->At = PlatformAlloc(Dst->Size);
+#endif
     Assert(Dst->At);
 
     u8* DstRow = Dst->At + Dst->Pitch * (Dst->Height - 1);
 
-    for(i32 Y = 0;
-        Y < Dst->Height;
-        Y++)
+    if(InfoHeader->BitCount == 24)
     {
-        u8* SrcCol = SrcRow;
-        u8* DstCol = DstRow;
+        usz SrcPitch = ((InfoHeader->Width*3 + 3) / 4) * 4;
+        usz SrcSize = SrcPitch * InfoHeader->Height;
+        Assert(Size >= SrcSize);
+        Size -= SrcSize;
 
-        for(i32 X = 0;
-            X < Dst->Width;
-            X++)
+        u8* SrcRow = Data + FileHeader->DataOffset;
+
+        for(i32 Y = 0;
+            Y < Dst->Height;
+            Y++)
         {
-            u8 SrcB = *(SrcCol++);
-            u8 SrcG = *(SrcCol++);
-            u8 SrcR = *(SrcCol++);
-            u8 SrcA = 0;
+            u8* SrcCol = SrcRow;
+            u8* DstCol = DstRow;
 
-            *(u32*)(DstCol) = (SrcA << 24) | (SrcR << 16) | (SrcG << 8) | (SrcB << 0);
+            for(i32 X = 0;
+                X < Dst->Width;
+                X++)
+            {
+                u8 SrcB = *(SrcCol++);
+                u8 SrcG = *(SrcCol++);
+                u8 SrcR = *(SrcCol++);
+                u8 SrcA = 0;
 
-            DstCol += 4;
+                *(u32*)(DstCol) = (SrcA << 24) | (SrcR << 16) | (SrcG << 8) | (SrcB << 0);
+
+                DstCol += 4;
+            }
+
+            SrcRow += SrcPitch;
+            DstRow -= Dst->Pitch;
         }
+    }
+    else if(InfoHeader->BitCount == 32)
+    {
+        usz SrcPitch = InfoHeader->Width* 4;
+        usz SrcSize = SrcPitch * InfoHeader->Height;
+        Assert(Size >= SrcSize);
+        Size -= SrcSize;
 
-        SrcRow += SrcPitch;
-        DstRow -= Dst->Pitch;
+        u8* SrcRow = Data + FileHeader->DataOffset;
+
+        for(i32 Y = 0;
+            Y < Dst->Height;
+            Y++)
+        {
+            u32* SrcCol = (u32*) SrcRow;
+            u8* DstCol = DstRow;
+
+            for(i32 X = 0;
+                X < Dst->Width;
+                X++)
+            {
+                u32 Value = *(SrcCol++) & 0x00FFFFFF;
+
+                *(u32*)(DstCol) = Value;
+
+                DstCol += 4;
+            }
+
+            SrcRow += SrcPitch;
+            DstRow -= Dst->Pitch;
+        }
+    }
+    else
+    {
+        Assert(!"Not supported bit count");
     }
 
     return 1;

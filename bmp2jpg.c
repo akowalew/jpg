@@ -38,7 +38,7 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
-    TIMING_TICK("After read file");
+    TIMING_TICK("Encoding JPEG");
 
 #if 0
     PlatformShowBitmap(&Bitmap, "BMP");
@@ -58,11 +58,15 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
+    TIMING_TICK("Writing file");
+
     if(!PlatformWriteEntireFile(OutputFile, OutputData, OutputSize))
     {
         fprintf(stderr, "Failed to write output file\n");
         return EXIT_FAILURE;
     }
+
+    TIMING_FINI("Done");
 
     return EXIT_SUCCESS;
 }

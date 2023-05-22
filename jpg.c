@@ -886,7 +886,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
         Idx++)
     {
         float Coeff = (JPEG_STD_Y_Q50[Idx] * Ratio);
-
+        // SIMD
         DQT[0]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
     }
 
@@ -897,7 +897,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
         Idx++)
     {
         float Coeff = (JPEG_STD_Chroma_Q50[Idx] * Ratio);
-
+        // SIMD
         DQT[1]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
     }
 
