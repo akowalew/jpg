@@ -2,7 +2,7 @@
 #include <inttypes.h>
 #include <stddef.h>
 #include <stdio.h>
-#include <immintrin.h>
+#include <intrin.h>
 
 #define function static
 
@@ -33,6 +33,12 @@ typedef int8_t i8;
 
 #define CLAMP(X, Lo, Hi) ((X) <= (Lo) ? (Lo) : ((X) >= (Hi) ? (Hi) : (X)))
 
+#if defined(_MSC_VER)
+#define ALIGNED(x) __declspec(align(x))
+#elif defined(__GNUC__)
+#define ALIGNED(x) __attribute__ ((aligned(x)))
+#endif
+
 typedef struct
 {
     i32 Width;
@@ -51,7 +57,6 @@ typedef struct
     usz Elapsed;
     u8* At;
 } buffer;
-
 
 //
 // NOTE: Following functions need to be implemented for each platform

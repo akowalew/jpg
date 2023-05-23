@@ -2,7 +2,7 @@
 #define JPG_PRETTY_EXTEND_EDGES 0
 #endif
 
-static const f32 DCT8x8Table[8][8] = 
+static const ALIGNED(16) f32 DCT8x8Table[8][8] = 
 {
     { +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f, +0.3536f },
     { +0.4904f, +0.4157f, +0.2778f, +0.0975f, -0.0975f, -0.2778f, -0.4157f, -0.4904f },
@@ -14,7 +14,7 @@ static const f32 DCT8x8Table[8][8] =
     { +0.0975f, -0.2778f, +0.4157f, -0.4904f, +0.4904f, -0.4157f, +0.2778f, -0.0975f },
 };
 
-static const f32 tDCT8x8Table[8][8] = 
+static const ALIGNED(16) f32 tDCT8x8Table[8][8] = 
 {
     { +0.3536f, +0.4904f, +0.4619f, +0.4157f, +0.3536f, +0.2778f, +0.1913f, +0.0975f },
     { +0.3536f, +0.4157f, +0.1913f, -0.0975f, -0.3536f, -0.4904f, -0.4619f, -0.2778f },
@@ -26,7 +26,7 @@ static const f32 tDCT8x8Table[8][8] =
     { +0.3536f, -0.4904f, +0.4619f, -0.4157f, +0.3536f, -0.2778f, +0.1913f, -0.0975f },
 };
 
-static const u8 ZigZagTable[8][8] =
+static const ALIGNED(16) u8 ZigZagTable[8][8] =
 {
     { 0,  1,  5,  6, 14, 15, 27, 28},
     { 2,  4,  7, 13, 16, 26, 29, 42},
@@ -214,7 +214,7 @@ static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8
         }
     }
 
-    i16 Z[64];
+    ALIGNED(16) i16 Z[64];
 
     for(u8 Y = 0;
         Y < 8;
@@ -502,9 +502,18 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
     {
         u8* Col = Row;
 
-        i8 Lum[2][2][8][8];
-        i8 Cb[2][2][8][8];
-        i8 Cr[2][2][8][8];
+        ALIGNED(16) i8 Lum[2][2][8][8];
+        ALIGNED(16) i8 Cb[2][2][8][8];
+        ALIGNED(16) i8 Cr[2][2][8][8];
+
+#if 1
+        // BB GG RR AA
+        __m128 XMM2 = _mm_set_ps(0.0f, 0.299f, 0.587f, 0.114f);
+        __m128 XMM3 = _mm_set_ps(0.0f, -0.168736f, -0.331264f, 0.5f);
+        __m128 XMM4 = _mm_set_ps(0.0f, 0.5f, -0.418688f, -0.081312f);
+        __m128 XMM8 = _mm_set_ps(0.0f, 0.0f, 0.0f, -128.0f);
+        __m128 XMM12 = _mm_setzero_ps();
+#endif
 
         for(u16 BlockX = 0;
             BlockX < NumBlocksX;
@@ -537,6 +546,7 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                             X < 8;
                             X++)
                         {
+#if 0
                             u8 B = SubCol[0];
                             u8 G = SubCol[1];
                             u8 R = SubCol[2];
@@ -548,6 +558,34 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                             MidLum[Y*8+X] = (i8) CLAMP(Lum_Value, -128, 127);
                             MidCb[Y*8+X] = (i8) CLAMP(Cb_Value, -128, 127);
                             MidCr[Y*8+X] = (i8) CLAMP(Cr_Value, -128, 127);
+
+#else
+                            __m128i XMM0, XMM9, XMM10, XMM11;
+                            __m128 XMM1, XMM5, XMM6, XMM7;
+
+                            // BB, GG, RR, AA
+                            XMM0 = _mm_loadu_si32(SubCol);
+                            XMM0 = _mm_cvtepu8_epi32(XMM0);
+                            XMM1 = _mm_cvtepi32_ps(XMM0);
+
+                            XMM5 = _mm_mul_ps(XMM1, XMM2);
+                            XMM6 = _mm_mul_ps(XMM1, XMM3);
+                            XMM7 = _mm_mul_ps(XMM1, XMM4);
+
+                            XMM5 = _mm_hadd_ps(XMM5, XMM6);
+                            XMM7 = _mm_hadd_ps(XMM7, XMM12);
+                            XMM5 = _mm_hadd_ps(XMM5, XMM7);
+                            XMM5 = _mm_add_ps(XMM5, XMM8);
+
+                            XMM9 = _mm_cvtps_epi32(XMM5);
+                            XMM9 = _mm_packs_epi32(XMM9, XMM9);
+                            XMM9 = _mm_packs_epi16(XMM9, XMM9);
+
+                            u32 Value = _mm_cvtsi128_si32(XMM9);
+                            MidLum[Y*8+X] = Value & 0xFF;
+                            MidCb[Y*8+X] = (Value >> 8) & 0xFF;
+                            MidCr[Y*8+X] = (Value >> 16) & 0xFF;
+#endif
 
                             SubCol += 4;
                         }
@@ -877,29 +915,59 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     APP0->ThumbnailWidth = 0;
     APP0->ThumbnailHeight = 0;
 
-    jpeg_dqt* DQT[2];
+    __m128 Ratio_4xF32 = _mm_set_ps1(Ratio);
+    __m128 Max_4xF32 = _mm_set_ps(255, 255, 255, 255);
+    __m128 Min_4xF32 = _mm_set_ps(1, 1, 1, 1);
 
-    Assert(DQT[0] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
-    DQT[0]->Id = 0;
+    ALIGNED(16) u8 DQT_Y[64];
+#if 0
     for(u8 Idx = 0;
         Idx < 64;
         Idx++)
     {
         float Coeff = (JPEG_STD_Y_Q50[Idx] * Ratio);
         // SIMD
-        DQT[0]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
+        DQT_Y[Idx] = (u8) CLAMP(Coeff, 1, 255);
     }
+#else
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx += 4)
+    {
+        __m128i Input_4xU8 = _mm_loadu_si32(&JPEG_STD_Y_Q50[Idx]);
+        __m128i Input_4xU32 = _mm_cvtepu8_epi32(Input_4xU8);
+        __m128 Input_4xF32 = _mm_cvtepi32_ps(Input_4xU32);
 
-    Assert(DQT[1] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
-    DQT[1]->Id = 1;
+        __m128 Result_4xF32 = _mm_mul_ps(Input_4xF32, Ratio_4xF32);
+
+        __m128 Clamped_4xF32 = _mm_max_ps(_mm_min_ps(Result_4xF32, Max_4xF32), Min_4xF32);
+
+        __m128i Output_4xU32 = _mm_cvtps_epi32(Clamped_4xF32);
+        __m128i Output_4xU16 = _mm_packus_epi32(Output_4xU32, Output_4xU32);
+        __m128i Output_4xU8 = _mm_packus_epi16(Output_4xU16, Output_4xU16);
+        *(u32*)(&DQT_Y[Idx]) = _mm_cvtsi128_si32(Output_4xU8);
+    }
+#endif
+
+    ALIGNED(16) u8 DQT_Chroma[64];
     for(u8 Idx = 0;
         Idx < 64;
         Idx++)
     {
         float Coeff = (JPEG_STD_Chroma_Q50[Idx] * Ratio);
         // SIMD
-        DQT[1]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
+        DQT_Chroma[Idx] = (u8) CLAMP(Coeff, 1, 255);
     }
+
+    jpeg_dqt* DQT[2];
+
+    Assert(DQT[0] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
+    DQT[0]->Id = 0;
+    memcpy(DQT[0]->Coefficients, DQT_Y, sizeof(DQT_Y));
+
+    Assert(DQT[1] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
+    DQT[1]->Id = 1;
+    memcpy(DQT[1]->Coefficients, DQT_Chroma, sizeof(DQT_Chroma));
 
     jpeg_sof0* SOF0;
 
