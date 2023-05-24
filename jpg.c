@@ -231,7 +231,7 @@ static void MatrixMul8x8(const f32 Left[8][8], const f32 Right[8][8], f32 Output
     }
 }
 
-static int PushPixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
     ALIGNED(16) f32 Tmp[8][8];
     ALIGNED(16) f32 D[8][8];
@@ -239,7 +239,7 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u
     MatrixMul8x8(DCT8x8Table, P, Tmp);
     MatrixMul8x8(Tmp, DCT8x8Table, D);
 
-    ALIGNED(16) i16 Z[64];
+    ALIGNED(16) f32 K[64];
 
     for(u8 Y = 0;
         Y < 8;
@@ -251,16 +251,53 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u
         {
             u8 Index = ZigZagTable[Y][X];
 
-            Z[Index] = (i16) CLAMP(D[Y][X], -32768, 32767);
+            K[Index] = D[Y][X]; //(i16) CLAMP(D[Y][X], -32768, 32767);
         }
     }
 
+    ALIGNED(16) i16 Z[64];
+
+#if 0
     for(u8 Idx = 0;
         Idx < 64;
         Idx++)
     {
-        Z[Idx] /= DQT[Idx];
+        f32 Div = K[Idx] / DQT[Idx];
+
+        Z[Idx] = (i16)Div;
     }
+#else
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx += 16)
+    {
+        __m128 XMM0 = _mm_load_ps(&K[Idx+0]);
+        __m128 XMM1 = _mm_load_ps(&K[Idx+4]);
+        __m128 XMM2 = _mm_load_ps(&K[Idx+8]);
+        __m128 XMM3 = _mm_load_ps(&K[Idx+12]);
+
+        __m128 XMM4 = _mm_load_ps(&DQT[Idx+0]);
+        __m128 XMM5 = _mm_load_ps(&DQT[Idx+4]);
+        __m128 XMM6 = _mm_load_ps(&DQT[Idx+8]);
+        __m128 XMM7 = _mm_load_ps(&DQT[Idx+12]);
+
+        XMM0 = _mm_div_ps(XMM0, XMM4);
+        XMM1 = _mm_div_ps(XMM1, XMM5);
+        XMM2 = _mm_div_ps(XMM2, XMM6);
+        XMM3 = _mm_div_ps(XMM3, XMM7);
+
+        __m128i XMM8 = _mm_cvttps_epi32((XMM0));
+        __m128i XMM9 = _mm_cvttps_epi32((XMM1));
+        __m128i XMMA = _mm_cvttps_epi32((XMM2));
+        __m128i XMMB = _mm_cvttps_epi32((XMM3));
+
+        XMM8 = _mm_packs_epi32(XMM8, XMM9);
+        XMMA = _mm_packs_epi32(XMMA, XMMB);
+
+        _mm_store_si128((__m128i*) &Z[Idx+0], XMM8);
+        _mm_store_si128((__m128i*) &Z[Idx+8], XMMA);
+    }
+#endif
 
     i16 PrevDC = *DC;
     *DC = Z[0];
@@ -421,7 +458,7 @@ static int DecodePixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const 
 }
 
 static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap, 
-                     const u8* DQT_Y, const u8* DQT_Chroma, 
+                     const f32* DQT_Y, const f32* DQT_Chroma, 
                      const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
                      const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
                      u8 SX, u8 SY)
@@ -940,15 +977,15 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     __m128 Max_4xF32 = _mm_set_ps(255, 255, 255, 255);
     __m128 Min_4xF32 = _mm_set_ps(1, 1, 1, 1);
 
-    ALIGNED(16) u8 DQT_Y[64];
-#if 0
+    ALIGNED(16) f32 DQT_Y[64];
+#if 1
     for(u8 Idx = 0;
         Idx < 64;
         Idx++)
     {
         float Coeff = (JPEG_STD_Y_Q50[Idx] * Ratio);
         // SIMD
-        DQT_Y[Idx] = (u8) CLAMP(Coeff, 1, 255);
+        DQT_Y[Idx] = Coeff;//(u8) CLAMP(Coeff, 1, 255);
     }
 #else
     for(u8 Idx = 0;
@@ -970,25 +1007,37 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     }
 #endif
 
-    ALIGNED(16) u8 DQT_Chroma[64];
+    ALIGNED(16) f32 DQT_Chroma[64];
     for(u8 Idx = 0;
         Idx < 64;
         Idx++)
     {
         float Coeff = (JPEG_STD_Chroma_Q50[Idx] * Ratio);
         // SIMD
-        DQT_Chroma[Idx] = (u8) CLAMP(Coeff, 1, 255);
+        DQT_Chroma[Idx] = Coeff;//(u8) CLAMP(Coeff, 1, 255);
     }
 
     jpeg_dqt* DQT[2];
 
     Assert(DQT[0] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
     DQT[0]->Id = 0;
-    memcpy(DQT[0]->Coefficients, DQT_Y, sizeof(DQT_Y));
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        float Coeff = DQT_Y[Idx];
+        DQT[0]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
+    }
 
     Assert(DQT[1] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
     DQT[1]->Id = 1;
-    memcpy(DQT[1]->Coefficients, DQT_Chroma, sizeof(DQT_Chroma));
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        float Coeff = DQT_Chroma[Idx];
+        DQT[1]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
+    }
 
     jpeg_sof0* SOF0;
 
@@ -1049,7 +1098,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     BitStream.Len = 0;
 
     Assert(EncodeImage(&BitStream, Bitmap, 
-                     DQT[0]->Coefficients, DQT[1]->Coefficients,
+                     DQT_Y, DQT_Chroma,
                      &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
                      &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1],
                      SX, SY));
