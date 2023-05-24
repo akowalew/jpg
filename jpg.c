@@ -168,49 +168,84 @@ static int PushSymbol(bit_stream* BitStream, const u8* DHT, u8 Value)
 
 static int PushPixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
-    f32 Tmp[8][8];
+    ALIGNED(16) f32 Tmp[8][8];
 
     for(u8 Y = 0;
         Y < 8;
         Y++)
     {
+        __m128 XMM0 = _mm_load_ps(&DCT8x8Table[Y][0]);
+        __m128 XMM1 = _mm_load_ps(&DCT8x8Table[Y][4]);
+
         for(u8 X = 0;
             X < 8;
             X++)
         {
+#if 1
+            __m128 XMM2 = _mm_load_ps(&P[X][0]);
+            __m128 XMM3 = _mm_load_ps(&P[X][4]);
+
+            XMM2 = _mm_mul_ps(XMM0, XMM2);
+            XMM3 = _mm_mul_ps(XMM1, XMM3);
+
+            XMM2 = _mm_hadd_ps(XMM2, XMM3);
+            XMM2 = _mm_hadd_ps(XMM2, XMM2);
+            XMM2 = _mm_hadd_ps(XMM2, XMM2);
+
+            Tmp[Y][X] = _mm_cvtss_f32(XMM2);
+#else
             f32 S = 0;
 
             for(u8 K = 0;
                 K < 8;
                 K++)
             {
-                S += DCT8x8Table[Y][K] * P[K][X];
+                S += DCT8x8Table[Y][K] * P[X][K];
             }
 
             Tmp[Y][X] = S;
+#endif
         }
     }
 
-    f32 D[8][8];
+    ALIGNED(16) f32 D[8][8];
 
     for(u8 Y = 0;
         Y < 8;
         Y++)
     {
+        __m128 XMM0 = _mm_load_ps(&Tmp[Y][0]);
+        __m128 XMM1 = _mm_load_ps(&Tmp[Y][4]);
+
         for(u8 X = 0;
             X < 8;
             X++)
         {
+#if 1
+            __m128 XMM2 = _mm_load_ps(&DCT8x8Table[X][0]);
+            __m128 XMM3 = _mm_load_ps(&DCT8x8Table[X][4]);
+
+            XMM2 = _mm_mul_ps(XMM0, XMM2);
+            XMM3 = _mm_mul_ps(XMM1, XMM3);
+
+            XMM2 = _mm_hadd_ps(XMM2, XMM3);
+            XMM2 = _mm_hadd_ps(XMM2, XMM2);
+            XMM2 = _mm_hadd_ps(XMM2, XMM2);
+
+            D[Y][X] = _mm_cvtss_f32(XMM2);
+#else
             f32 S = 0;
 
             for(u8 K = 0;
                 K < 8;
                 K++)
             {
-                S += Tmp[Y][K] * tDCT8x8Table[K][X];
+                // NOTE: Intentional un-transpose of DCT8x8Table
+                S += Tmp[Y][K] * DCT8x8Table[X][K];
             }
 
             D[Y][X] = S;
+#endif
         }
     }
 
@@ -578,9 +613,9 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
 
                             // TODO: No clamping?
                             _mm_store_ps(Result, XMM5);
-                            MidLum[Y*8+X] = Result[0] - 128;
-                            MidCb[Y*8+X] = Result[1];
-                            MidCr[Y*8+X] = Result[2];
+                            MidLum[X*8+Y] = Result[0] - 128;
+                            MidCb[X*8+Y] = Result[1];
+                            MidCr[X*8+Y] = Result[2];
 #endif
 
                             SubCol += 4;
