@@ -329,6 +329,7 @@ static void TimingFini(const char* Description)
         printf("%s => %" PRIu64 " ticks\n", TimingData[Idx].Description, Diff);
     }
     fflush(stdout);
+    getchar();
 }
 
 #ifndef TIMING_ENABLED

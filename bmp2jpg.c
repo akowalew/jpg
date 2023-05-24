@@ -68,5 +68,11 @@ int main(int Argc, char** Argv)
 
     TIMING_FINI("Done");
 
+#if 1
+    bitmap JPEG = {0};
+    Assert(DecodeJPEG(OutputData, OutputSize, &JPEG));
+    PlatformShowBitmap(&JPEG, "JPEG");
+#endif
+
     return EXIT_SUCCESS;
 }

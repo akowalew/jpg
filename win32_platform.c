@@ -74,6 +74,7 @@ LRESULT MainWindowProc(HWND Window, UINT Msg, WPARAM WParam, LPARAM LParam)
 
     switch(Msg)
     {
+        case WM_KEYDOWN:
         case WM_CLOSE:
         {
             // TODO: Message to user?
@@ -180,12 +181,22 @@ int PlatformShowBitmap(bitmap* Bitmap, const char* Title)
         BitmapInfo.bmiHeader.biClrUsed = 0;
         BitmapInfo.bmiHeader.biClrImportant = 0;
 
+#if 1
         Assert(SetDIBitsToDevice(DeviceContext,
                                  0, 0,
                                  Bitmap->Width, Bitmap->Height,
                                  0, 0,
                                  0, Bitmap->Height,
                                  Bitmap->At, &BitmapInfo, DIB_RGB_COLORS));
+#else
+        RECT ClientRect;
+        Assert(GetClientRect(Window, &ClientRect));
+        int ClientWidth = ClientRect.right - ClientRect.left;
+        int ClientHeight = ClientRect.bottom - ClientRect.top;
+        Assert(StretchDIBits(DeviceContext, 0, 0, ClientWidth, ClientHeight,
+                             0, 0, Bitmap->Width, Bitmap->Height, Bitmap->At,
+                             &BitmapInfo, DIB_RGB_COLORS, SRCCOPY));
+#endif
     }
 
     return (int) Message.wParam;

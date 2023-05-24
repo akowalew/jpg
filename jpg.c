@@ -166,7 +166,7 @@ static int PushSymbol(bit_stream* BitStream, const u8* DHT, u8 Value)
     return 0;
 }
 
-static int PushPixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+static int PushPixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
     f32 Tmp[8][8];
 
@@ -502,16 +502,15 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
     {
         u8* Col = Row;
 
-        ALIGNED(16) i8 Lum[2][2][8][8];
-        ALIGNED(16) i8 Cb[2][2][8][8];
-        ALIGNED(16) i8 Cr[2][2][8][8];
+        ALIGNED(16) f32 Lum[2][2][8][8];
+        ALIGNED(16) f32 Cb[2][2][8][8];
+        ALIGNED(16) f32 Cr[2][2][8][8];
 
 #if 1
         // BB GG RR AA
         __m128 XMM2 = _mm_set_ps(0.0f, 0.299f, 0.587f, 0.114f);
         __m128 XMM3 = _mm_set_ps(0.0f, -0.168736f, -0.331264f, 0.5f);
         __m128 XMM4 = _mm_set_ps(0.0f, 0.5f, -0.418688f, -0.081312f);
-        __m128 XMM8 = _mm_set_ps(0.0f, 0.0f, 0.0f, -128.0f);
         __m128 XMM12 = _mm_setzero_ps();
 #endif
 
@@ -532,9 +531,9 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                 {
                     u8* SubRow = MidCol;
 
-                    i8* MidLum =  (i8*) Lum[KY][KX];
-                    i8* MidCb = (i8*) Cb[KY][KX];
-                    i8* MidCr = (i8*) Cr[KY][KX];
+                    f32* MidLum =  (f32*) Lum[KY][KX];
+                    f32* MidCb = (f32*) Cb[KY][KX];
+                    f32* MidCr = (f32*) Cr[KY][KX];
 
                     for(u8 Y = 0;
                         Y < 8;
@@ -562,6 +561,7 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
 #else
                             __m128i XMM0, XMM9, XMM10, XMM11;
                             __m128 XMM1, XMM5, XMM6, XMM7;
+                            ALIGNED(16) f32 Result[4];
 
                             // BB, GG, RR, AA
                             XMM0 = _mm_loadu_si32(SubCol);
@@ -575,16 +575,12 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                             XMM5 = _mm_hadd_ps(XMM5, XMM6);
                             XMM7 = _mm_hadd_ps(XMM7, XMM12);
                             XMM5 = _mm_hadd_ps(XMM5, XMM7);
-                            XMM5 = _mm_add_ps(XMM5, XMM8);
 
-                            XMM9 = _mm_cvtps_epi32(XMM5);
-                            XMM9 = _mm_packs_epi32(XMM9, XMM9);
-                            XMM9 = _mm_packs_epi16(XMM9, XMM9);
-
-                            u32 Value = _mm_cvtsi128_si32(XMM9);
-                            MidLum[Y*8+X] = Value & 0xFF;
-                            MidCb[Y*8+X] = (Value >> 8) & 0xFF;
-                            MidCr[Y*8+X] = (Value >> 16) & 0xFF;
+                            // TODO: No clamping?
+                            _mm_store_ps(Result, XMM5);
+                            MidLum[Y*8+X] = Result[0] - 128;
+                            MidCb[Y*8+X] = Result[1];
+                            MidCr[Y*8+X] = Result[2];
 #endif
 
                             SubCol += 4;
@@ -607,8 +603,8 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                     CX < 8;
                     CX++)
                 {
-                    int SumCb = 0;
-                    int SumCr = 0;
+                    f32 SumCb = 0;
+                    f32 SumCr = 0;
 
                     for(u8 KY = 0;
                         KY < SY;
