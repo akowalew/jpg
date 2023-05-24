@@ -166,33 +166,55 @@ static int PushSymbol(bit_stream* BitStream, const u8* DHT, u8 Value)
     return 0;
 }
 
-static int PushPixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+static void MatrixMul8x8(const f32 Left[8][8], const f32 Right[8][8], f32 Output[8][8])
 {
-    ALIGNED(16) f32 Tmp[8][8];
-
     for(u8 Y = 0;
         Y < 8;
         Y++)
     {
-        __m128 XMM0 = _mm_load_ps(&DCT8x8Table[Y][0]);
-        __m128 XMM1 = _mm_load_ps(&DCT8x8Table[Y][4]);
+        __m128 XMM0 = _mm_load_ps(&Left[Y][0]);
+        __m128 XMM1 = _mm_load_ps(&Left[Y][4]);
 
         for(u8 X = 0;
             X < 8;
-            X++)
+            X += 4)
         {
 #if 1
-            __m128 XMM2 = _mm_load_ps(&P[X][0]);
-            __m128 XMM3 = _mm_load_ps(&P[X][4]);
+            __m128 XMM2 = _mm_load_ps(&Right[X][0]);
+            __m128 XMM3 = _mm_load_ps(&Right[X][4]);
+
+            __m128 XMM4 = _mm_load_ps(&Right[X+1][0]);
+            __m128 XMM5 = _mm_load_ps(&Right[X+1][4]);
+            
+            __m128 XMM6 = _mm_load_ps(&Right[X+2][0]);
+            __m128 XMM7 = _mm_load_ps(&Right[X+2][4]);
+
+            __m128 XMM8 = _mm_load_ps(&Right[X+3][0]);
+            __m128 XMM9 = _mm_load_ps(&Right[X+3][4]);
 
             XMM2 = _mm_mul_ps(XMM0, XMM2);
             XMM3 = _mm_mul_ps(XMM1, XMM3);
 
-            XMM2 = _mm_hadd_ps(XMM2, XMM3);
-            XMM2 = _mm_hadd_ps(XMM2, XMM2);
-            XMM2 = _mm_hadd_ps(XMM2, XMM2);
+            XMM4 = _mm_mul_ps(XMM0, XMM4);
+            XMM5 = _mm_mul_ps(XMM1, XMM5);
 
-            Tmp[Y][X] = _mm_cvtss_f32(XMM2);
+            XMM6 = _mm_mul_ps(XMM0, XMM6);
+            XMM7 = _mm_mul_ps(XMM1, XMM7);
+
+            XMM8 = _mm_mul_ps(XMM0, XMM8);
+            XMM9 = _mm_mul_ps(XMM1, XMM9);
+
+            XMM2 = _mm_hadd_ps(XMM2, XMM3);
+            XMM4 = _mm_hadd_ps(XMM4, XMM5);
+            XMM6 = _mm_hadd_ps(XMM6, XMM7);
+            XMM8 = _mm_hadd_ps(XMM8, XMM9);
+
+            XMM2 = _mm_hadd_ps(XMM2, XMM4);
+            XMM6 = _mm_hadd_ps(XMM6, XMM8);
+
+            XMM2 = _mm_hadd_ps(XMM2, XMM6);
+
+            _mm_store_ps(&Output[Y][X], XMM2);
 #else
             f32 S = 0;
 
@@ -207,47 +229,15 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u
 #endif
         }
     }
+}
 
+static int PushPixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+{
+    ALIGNED(16) f32 Tmp[8][8];
     ALIGNED(16) f32 D[8][8];
 
-    for(u8 Y = 0;
-        Y < 8;
-        Y++)
-    {
-        __m128 XMM0 = _mm_load_ps(&Tmp[Y][0]);
-        __m128 XMM1 = _mm_load_ps(&Tmp[Y][4]);
-
-        for(u8 X = 0;
-            X < 8;
-            X++)
-        {
-#if 1
-            __m128 XMM2 = _mm_load_ps(&DCT8x8Table[X][0]);
-            __m128 XMM3 = _mm_load_ps(&DCT8x8Table[X][4]);
-
-            XMM2 = _mm_mul_ps(XMM0, XMM2);
-            XMM3 = _mm_mul_ps(XMM1, XMM3);
-
-            XMM2 = _mm_hadd_ps(XMM2, XMM3);
-            XMM2 = _mm_hadd_ps(XMM2, XMM2);
-            XMM2 = _mm_hadd_ps(XMM2, XMM2);
-
-            D[Y][X] = _mm_cvtss_f32(XMM2);
-#else
-            f32 S = 0;
-
-            for(u8 K = 0;
-                K < 8;
-                K++)
-            {
-                // NOTE: Intentional un-transpose of DCT8x8Table
-                S += Tmp[Y][K] * DCT8x8Table[X][K];
-            }
-
-            D[Y][X] = S;
-#endif
-        }
-    }
+    MatrixMul8x8(DCT8x8Table, P, Tmp);
+    MatrixMul8x8(Tmp, DCT8x8Table, D);
 
     ALIGNED(16) i16 Z[64];
 
