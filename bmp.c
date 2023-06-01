@@ -45,6 +45,11 @@ int ParseBMP(u8* Data, usz Size, bitmap* Dst)
 
         u8* SrcRow = Data + FileHeader->DataOffset;
 
+#if 0
+        __m128i XMM4 = _mm_setr_epi8(0x00, 0x01, 0x02, 0xFF, 0x03, 0x04, 0x05, 0xFF, 0x06, 0x07, 0x08, 0xFF, 0x09, 0x0A, 0x0B, 0xFF);
+        __m128i XMM5 = _mm_setr_epi8(0x04, 0x05, 0x06, 0xFF, 0x07, 0x08, 0x09, 0xFF, 0x0A, 0x0B, 0x0C, 0xFF, 0x0D, 0x0E, 0x0F, 0xFF);
+#endif
+
         for(i32 Y = 0;
             Y < Dst->Height;
             Y++)
@@ -52,19 +57,45 @@ int ParseBMP(u8* Data, usz Size, bitmap* Dst)
             u8* SrcCol = SrcRow;
             u8* DstCol = DstRow;
 
+#if 1
             for(i32 X = 0;
                 X < Dst->Width;
                 X++)
             {
-                u8 SrcB = *(SrcCol++);
-                u8 SrcG = *(SrcCol++);
-                u8 SrcR = *(SrcCol++);
-                u8 SrcA = 0;
+                u32 Color = *(u32*)(SrcCol) & 0x00FFFFFF;
 
-                *(u32*)(DstCol) = (SrcA << 24) | (SrcR << 16) | (SrcG << 8) | (SrcB << 0);
+                *(u32*)(DstCol) = Color;
 
                 DstCol += 4;
+                SrcCol += 3;
             }
+#else
+            for(i32 X = 0;
+                X < Dst->Width;
+                X += 16)
+            {
+                __m128i XMM0 = _mm_loadu_si128((__m128i*) &SrcCol[0]);
+                __m128i XMM1 = _mm_loadu_si128((__m128i*) &SrcCol[16]);
+                __m128i XMM2 = _mm_loadu_si128((__m128i*) &SrcCol[32]);
+
+                __m128i XMM3 = _mm_shuffle_epi8(XMM0, XMM4);
+                _mm_storeu_si128((__m128i*) &DstCol[0], XMM3);
+
+                XMM3 = _mm_alignr_epi8(XMM1, XMM0, 12);
+                XMM3 = _mm_shuffle_epi8(XMM3, XMM4);
+                _mm_storeu_si128((__m128i*) &DstCol[16], XMM3);
+
+                XMM3 = _mm_alignr_epi8(XMM2, XMM1, 8);       
+                XMM3 = _mm_shuffle_epi8(XMM3, XMM4);
+                _mm_storeu_si128((__m128i*) &DstCol[32], XMM3);
+
+                XMM3 = _mm_shuffle_epi8(XMM2, XMM5);
+                _mm_storeu_si128((__m128i*) &DstCol[48], XMM3);
+
+                DstCol += 64;
+                SrcCol += 48;
+            }
+#endif
 
             SrcRow += SrcPitch;
             DstRow -= Dst->Pitch;
