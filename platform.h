@@ -195,11 +195,10 @@ static int Refill(bit_stream* BitStream)
 static int Flush(bit_stream* BitStream)
 {
     u8 BytesCount = BitStream->Len / 8;
-    Assert(BitStream->Elapsed > BytesCount);
+    Assert(BitStream->Elapsed > BytesCount*2);
+    BitStream->Elapsed -= BytesCount;
 
-    for(u8 Idx = 0;
-        Idx < BytesCount;
-        Idx++)
+    while(BytesCount)
     {
 #if 0
         u8 Byte = (BitStream->Buf & 0xFF);
@@ -215,8 +214,9 @@ static int Flush(bit_stream* BitStream)
         if(Byte == 0xFF)
         {
             *(BitStream->At++) = 0x00;
-            BitStream->Elapsed--;
         }
+
+        BytesCount--;
     }
 
     return 1;

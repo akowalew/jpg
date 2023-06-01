@@ -47,27 +47,26 @@ static u8 EncodeNumber(i16 Number, u16* Value)
         return 0;
     }
 
-    u32 Raw;
-    if(Number < 0)
-    {
-        Raw = -Number;
-    }
-    else
-    {
-        Raw = Number;
-    }
+    u32 Raw = (Number < 0) ? -Number : Number;
 
+#if 0
     u8 Idx;
+    u32 Top = 1;
     for(Idx = 1;
         Idx < 16;
         Idx++)
     {
-        u32 Top = (1 << Idx);
+        Top <<= 1;
         if(Raw < Top)
         {
             break;        
         }  
     }
+#else
+    unsigned long Idx;
+    _BitScanReverse(&Idx, Raw);
+    Idx++;
+#endif
 
     if(Number < 0)
     {
@@ -79,7 +78,7 @@ static u8 EncodeNumber(i16 Number, u16* Value)
         *Value = (u16)(Raw);
     }
 
-    return Idx;
+    return (u8) Idx;
 }
 
 static i16 DecodeNumber(u8 Size, u16 Value)
@@ -593,7 +592,7 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                 {
                     u8* SubRow = MidCol;
 
-                    f32* MidLum =  (f32*) Lum[KY][KX];
+                    f32* MidLum = (f32*) Lum[KY][KX];
                     f32* MidCb = (f32*) Cb[KY][KX];
                     f32* MidCr = (f32*) Cr[KY][KX];
 
@@ -640,9 +639,11 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
 
                             // TODO: No clamping?
                             _mm_store_ps(Result, XMM5);
-                            MidLum[X*8+Y] = Result[0] - 128;
-                            MidCb[X*8+Y] = Result[1];
-                            MidCr[X*8+Y] = Result[2];
+
+                            u8 Idx = X*8+Y;
+                            MidLum[Idx] = Result[0] - 128;
+                            MidCb[Idx] = Result[1];
+                            MidCr[Idx] = Result[2];
 #endif
 
                             SubCol += 4;
@@ -657,6 +658,8 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                 MidRow += 8 * Bitmap->Pitch;
             }
 
+            u8 SXSY = SX*SY;
+#if 0
             for(u8 CY = 0;
                 CY < 8;
                 CY++)
@@ -681,10 +684,48 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                         }
                     }
 
-                    Cb[0][0][CY][CX] = (i8) (SumCb / (SX*SY));
-                    Cr[0][0][CY][CX] = (i8) (SumCr / (SX*SY));
+                    Cb[0][0][CY][CX] = (SumCb / SXSY);
+                    Cr[0][0][CY][CX] = (SumCr / SXSY);
                 }
             }
+#else
+            __m128 XMM5 = _mm_set1_ps(SXSY);
+
+            for(u8 CY = 0;
+                CY < 8;
+                CY++)
+            {
+                for(u8 CX = 0;
+                    CX < 8;
+                    CX += 4)
+                {
+                    __m128 XMM0 = _mm_setzero_ps();
+                    __m128 XMM1 = _mm_setzero_ps();
+
+                    for(u8 KY = 0;
+                        KY < SY;
+                        KY++)
+                    {
+                        for(u8 KX = 0;
+                            KX < SX;
+                            KX++)
+                        {
+                            __m128 XMM00 = _mm_load_ps(&Cb[KY][KX][CY][CX]);
+                            __m128 XMM11 = _mm_load_ps(&Cr[KY][KX][CY][CX]);
+
+                            XMM0 = _mm_add_ps(XMM0, XMM00);
+                            XMM1 = _mm_add_ps(XMM1, XMM11);
+                        }
+                    }
+
+                    XMM0 = _mm_div_ps(XMM0, XMM5);
+                    XMM1 = _mm_div_ps(XMM1, XMM5);
+
+                    _mm_store_ps(&Cb[0][0][CY][CX], XMM0);
+                    _mm_store_ps(&Cr[0][0][CY][CX], XMM1);
+                }
+            }
+#endif
 
             for(u8 KY = 0;
                 KY < SY;
