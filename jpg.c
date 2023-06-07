@@ -68,15 +68,7 @@ static u8 EncodeNumber(i16 Number, u16* Value)
     Idx++;
 #endif
 
-    if(Number < 0)
-    {
-        u32 Top = (1 << Idx);
-        *Value = (u16)(Top - Raw - 1);
-    }
-    else
-    {
-        *Value = (u16)(Raw);
-    }
+    *Value = (u16) ((Number < 0) ? ((1 << Idx) - Raw - 1) : Raw);
 
     return (u8) Idx;
 }
@@ -137,10 +129,9 @@ static int PopSymbol(bit_stream* BitStream, const u8* DHT, u8* Value)
     return 0;
 }
 
-static int PushSymbol(bit_stream* BitStream, const u8* DHT, u8 Value)
+static int PushSymbol(bit_stream* BitStream, const u32* DHT, u8 Value)
 {
-    // TODO: Separate push/encode symbol?
-
+#if 0
     const u8* Counts = &DHT[0];
     const u8* At = &DHT[16];
 
@@ -161,6 +152,13 @@ static int PushSymbol(bit_stream* BitStream, const u8* DHT, u8 Value)
 
         Code <<= 1;
     }
+#else
+    u32 LenCode = DHT[Value];
+    u16 Code = (LenCode & 0xFFFF);
+    u8 Len = (u8) (LenCode >> 16);
+    Assert(Len);
+    return PushBits(BitStream, Code, Len);
+#endif
 
     return 0;
 }
@@ -230,7 +228,7 @@ static void MatrixMul8x8(const f32 Left[8][8], const f32 Right[8][8], f32 Output
     }
 }
 
-static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const u32* DHT_DC, const u32* DHT_AC, i16* DC)
 {
     ALIGNED(16) f32 Tmp[8][8];
     ALIGNED(16) f32 D[8][8];
@@ -248,6 +246,8 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const 
             X < 8;
             X++)
         {
+            // TODO: SIMD!!!
+            
             u8 Index = ZigZagTable[Y][X];
 
             K[Index] = D[Y][X]; //(i16) CLAMP(D[Y][X], -32768, 32767);
@@ -314,6 +314,8 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const 
         u8 AC_RunLength = 0;
         while(!Z[Idx])
         {
+            // TODO: SIMD here?
+
             Idx++;
             AC_RunLength++;
             if(Idx == 64)
@@ -457,10 +459,10 @@ static int DecodePixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const 
 }
 
 static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap, 
-                     const f32* DQT_Y, const f32* DQT_Chroma, 
-                     const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
-                     const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
-                     u8 SX, u8 SY)
+                       const f32* DQT_Y, const f32* DQT_Chroma, 
+                       const u32* DHT_Y_DC, const u32* DHT_Y_AC, 
+                       const u32* DHT_Chroma_DC, const u32* DHT_Chroma_AC,
+                       u8 SX, u8 SY)
 {
     Assert(SX <= 2);
     Assert(SY <= 2);
@@ -961,6 +963,27 @@ static const u8 JPEG_STD_DHT11[] =
     0xF9, 0xFA,
 };
 
+static void GenerateJumpTableForHT(const u8* DHT, u32* JumpTable)
+{
+    const u8* Counts = &DHT[0];
+    const u8* At = &DHT[16];
+
+    u16 Code = 0;
+    for(u8 I = 0; I < 16; I++)
+    {
+        u8 BitLen = I+1;
+        for(u16 J = 0; J < Counts[I]; J++)
+        {
+            JumpTable[*At] = (BitLen << 16) | Code;
+
+            Code++;
+            At++;
+        }
+
+        Code <<= 1;
+    }
+}
+
 static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
 {
     usz BufferSize = Bitmap->Size*16; // TODO: Dynamical approach, eeeh?
@@ -1114,6 +1137,16 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     Assert(DHT[1][1] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT11)));
     memcpy(DHT[1][1], JPEG_STD_DHT11, sizeof(JPEG_STD_DHT11));
 
+    u32 DHT00[256] = {0};
+    u32 DHT01[256] = {0};
+    u32 DHT10[256] = {0};
+    u32 DHT11[256] = {0};
+
+    GenerateJumpTableForHT(&JPEG_STD_DHT00[1], DHT00);
+    GenerateJumpTableForHT(&JPEG_STD_DHT01[1], DHT01);
+    GenerateJumpTableForHT(&JPEG_STD_DHT10[1], DHT10);
+    GenerateJumpTableForHT(&JPEG_STD_DHT11[1], DHT11);
+
     jpeg_sos* SOS;
 
     Assert(SOS = PushSegment(Buffer, JPEG_SOS, jpeg_sos));
@@ -1139,10 +1172,10 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     BitStream.Len = 0;
 
     Assert(EncodeImage(&BitStream, Bitmap, 
-                     DQT_Y, DQT_Chroma,
-                     &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
-                     &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1],
-                     SX, SY));
+                       DQT_Y, DQT_Chroma,
+                       DHT00, DHT01,
+                       DHT10, DHT11,
+                       SX, SY));
 
     u16 Zero = 0;
     u8 NextFullByte = (BitStream.Len + 7) / 8;
