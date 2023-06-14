@@ -300,6 +300,8 @@ static void MatrixMul8x8T(const f32 Left[8][8], const f32 RightT[8][8], f32 Outp
             X += 4)
         {
 #if 1
+            // TODO: AVX2!!!
+
             __m128 XMM2 = _mm_load_ps(&RightT[X][0]);
             __m128 XMM3 = _mm_load_ps(&RightT[X][4]);
 
@@ -393,6 +395,8 @@ static void VectorDiv64(const f32 Left[64], const f32 Right[64], f32 Output[64])
         Idx < 64;
         Idx += 16)
     {
+        // TODO: AVX2!!!
+
         __m128 XMM0 = _mm_load_ps(&Left[Idx+0]);
         __m128 XMM1 = _mm_load_ps(&Left[Idx+4]);
         __m128 XMM2 = _mm_load_ps(&Left[Idx+8]);
@@ -432,6 +436,8 @@ static void VectorMul64(const f32 Left[64], const f32 Right[64], f32 Output[64])
         Idx < 64;
         Idx += 16)
     {
+        // TODO: AVX2!!!
+
         __m128 XMM0 = _mm_load_ps(&Left[Idx+0]);
         __m128 XMM1 = _mm_load_ps(&Left[Idx+4]);
         __m128 XMM2 = _mm_load_ps(&Left[Idx+8]);
@@ -451,6 +457,163 @@ static void VectorMul64(const f32 Left[64], const f32 Right[64], f32 Output[64])
         _mm_store_ps(&Output[Idx+4], XMM1);
         _mm_store_ps(&Output[Idx+8], XMM2);
         _mm_store_ps(&Output[Idx+12], XMM3);
+    }
+#endif
+}
+
+static void BGRAtoYCbCr_420_8x8(void* Data, usz Pitch, f32 Lum[2][2][8][8], f32 Cb[2][2][8][8], f32 Cr[2][2][8][8])
+{
+    // BB GG RR AA
+    __m128 XMM2 = _mm_set_ps(0.0f, 0.299f, 0.587f, 0.114f);
+    __m128 XMM3 = _mm_set_ps(0.0f, -0.168736f, -0.331264f, 0.5f);
+    __m128 XMM4 = _mm_set_ps(0.0f, 0.5f, -0.418688f, -0.081312f);
+    __m128 XMM12 = _mm_setzero_ps();
+
+    u8* MidRow = Data;
+    for(u8 KY = 0;
+        KY < 2;
+        KY++)
+    {
+        u8* MidCol = MidRow;
+
+        for(u8 KX = 0;
+            KX < 2;
+            KX++)
+        {
+            u8* SubRow = MidCol;
+
+            f32* MidLum = (f32*) Lum[KY][KX];
+            f32* MidCb = (f32*) Cb[KY][KX];
+            f32* MidCr = (f32*) Cr[KY][KX];
+
+            for(u8 Y = 0;
+                Y < 8;
+                Y++)
+            {
+                u8* SubCol = SubRow;
+
+                for(u8 X = 0;
+                    X < 8;
+                    X++)
+                {
+#if 0
+                    u8 B = SubCol[0];
+                    u8 G = SubCol[1];
+                    u8 R = SubCol[2];
+
+                    float Lum_Value = (0.299f*R + 0.587f*G + 0.114f*B - 128);
+                    float Cb_Value = (-0.168736f*R - 0.331264f*G + 0.5f*B);
+                    float Cr_Value = (0.5f*R - 0.418688f*G - 0.081312f*B);
+
+                    MidLum[Y*8+X] = (i8) CLAMP(Lum_Value, -128, 127);
+                    MidCb[Y*8+X] = (i8) CLAMP(Cb_Value, -128, 127);
+                    MidCr[Y*8+X] = (i8) CLAMP(Cr_Value, -128, 127);
+
+#else
+                    __m128i XMM0, XMM9, XMM10, XMM11;
+                    __m128 XMM1, XMM5, XMM6, XMM7;
+                    ALIGNED(16) f32 Result[4];
+
+                    // BB, GG, RR, AA
+                    XMM0 = _mm_loadu_si32(SubCol);
+                    XMM0 = _mm_cvtepu8_epi32(XMM0);
+                    XMM1 = _mm_cvtepi32_ps(XMM0);
+
+                    XMM5 = _mm_mul_ps(XMM1, XMM2);
+                    XMM6 = _mm_mul_ps(XMM1, XMM3);
+                    XMM7 = _mm_mul_ps(XMM1, XMM4);
+
+                    XMM5 = _mm_hadd_ps(XMM5, XMM6);
+                    XMM7 = _mm_hadd_ps(XMM7, XMM12);
+                    XMM5 = _mm_hadd_ps(XMM5, XMM7);
+
+                    // TODO: No clamping?
+                    _mm_store_ps(Result, XMM5);
+
+                    u8 Idx = X*8+Y;
+                    MidLum[Idx] = Result[0] - 128;
+                    MidCb[Idx] = Result[1];
+                    MidCr[Idx] = Result[2];
+#endif
+
+                    SubCol += 4;
+                }
+
+                SubRow += Pitch;
+            }
+
+            MidCol += 8 * 4;
+        }
+
+        MidRow += 8 * Pitch;
+    }
+
+#if 0
+    for(u8 CY = 0;
+        CY < 8;
+        CY++)
+    {
+        for(u8 CX = 0;
+            CX < 8;
+            CX++)
+        {
+            f32 SumCb = 0;
+            f32 SumCr = 0;
+
+            for(u8 KY = 0;
+                KY < SY;
+                KY++)
+            {
+                for(u8 KX = 0;
+                    KX < SX;
+                    KX++)
+                {
+                    SumCb += Cb[KY][KX][CY][CX];
+                    SumCr += Cr[KY][KX][CY][CX];
+                }
+            }
+
+            Cb[0][0][CY][CX] = (SumCb / SXSY);
+            Cr[0][0][CY][CX] = (SumCr / SXSY);
+        }
+    }
+#else
+    u8 SXSY = 4;
+    __m128 XMM5 = _mm_set1_ps(SXSY);
+
+    for(u8 CY = 0;
+        CY < 8;
+        CY++)
+    {
+        for(u8 CX = 0;
+            CX < 8;
+            CX += 4)
+        {
+            __m128 XMM0 = _mm_setzero_ps();
+            __m128 XMM1 = _mm_setzero_ps();
+
+            for(u8 KY = 0;
+                KY < 2;
+                KY++)
+            {
+                for(u8 KX = 0;
+                    KX < 2;
+                    KX++)
+                {
+                    __m128 XMM00 = _mm_load_ps(&Cb[KY][KX][CY][CX]);
+                    __m128 XMM11 = _mm_load_ps(&Cr[KY][KX][CY][CX]);
+
+                    XMM0 = _mm_add_ps(XMM0, XMM00);
+                    XMM1 = _mm_add_ps(XMM1, XMM11);
+                }
+            }
+
+            XMM0 = _mm_div_ps(XMM0, XMM5);
+            XMM1 = _mm_div_ps(XMM1, XMM5);
+
+            _mm_store_ps(&Cb[0][0][CY][CX], XMM0);
+            _mm_store_ps(&Cr[0][0][CY][CX], XMM1);
+        }
     }
 #endif
 }
