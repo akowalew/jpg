@@ -129,7 +129,7 @@ static int PopSymbol(bit_stream* BitStream, const u8* DHT, u8* Value)
     return 0;
 }
 
-static int PushSymbol(bit_stream* BitStream, const u32* DHT, u8 Value)
+static int EncodeSymbol(bit_stream* BitStream, const u32* DHT, u8 Value)
 {
 #if 0
     const u8* Counts = &DHT[0];
@@ -163,7 +163,7 @@ static int PushSymbol(bit_stream* BitStream, const u32* DHT, u8 Value)
     return 0;
 }
 
-static void MatrixMul8x8(const f32 Left[8][8], const f32 Right[8][8], f32 Output[8][8])
+static void MatrixMul8x8(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
 {
     for(u8 Y = 0;
         Y < 8;
@@ -177,17 +177,17 @@ static void MatrixMul8x8(const f32 Left[8][8], const f32 Right[8][8], f32 Output
             X += 4)
         {
 #if 1
-            __m128 XMM2 = _mm_load_ps(&Right[X][0]);
-            __m128 XMM3 = _mm_load_ps(&Right[X][4]);
+            __m128 XMM2 = _mm_load_ps(&RightT[X][0]);
+            __m128 XMM3 = _mm_load_ps(&RightT[X][4]);
 
-            __m128 XMM4 = _mm_load_ps(&Right[X+1][0]);
-            __m128 XMM5 = _mm_load_ps(&Right[X+1][4]);
+            __m128 XMM4 = _mm_load_ps(&RightT[X+1][0]);
+            __m128 XMM5 = _mm_load_ps(&RightT[X+1][4]);
             
-            __m128 XMM6 = _mm_load_ps(&Right[X+2][0]);
-            __m128 XMM7 = _mm_load_ps(&Right[X+2][4]);
+            __m128 XMM6 = _mm_load_ps(&RightT[X+2][0]);
+            __m128 XMM7 = _mm_load_ps(&RightT[X+2][4]);
 
-            __m128 XMM8 = _mm_load_ps(&Right[X+3][0]);
-            __m128 XMM9 = _mm_load_ps(&Right[X+3][4]);
+            __m128 XMM8 = _mm_load_ps(&RightT[X+3][0]);
+            __m128 XMM9 = _mm_load_ps(&RightT[X+3][4]);
 
             XMM2 = _mm_mul_ps(XMM0, XMM2);
             XMM3 = _mm_mul_ps(XMM1, XMM3);
@@ -228,17 +228,16 @@ static void MatrixMul8x8(const f32 Left[8][8], const f32 Right[8][8], f32 Output
     }
 }
 
-static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const u32* DHT_DC, const u32* DHT_AC, i16* DC)
+static int EncodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const u32* DHT_DC, const u32* DHT_AC, i16* DC)
 {
     ALIGNED(16) f32 Tmp[8][8];
     ALIGNED(16) f32 D[8][8];
-    ALIGNED(16) i16 M[64];
+    ALIGNED(16) f32 M[64];
     ALIGNED(16) i16 K[64];
 
     MatrixMul8x8(DCT8x8Table, P, Tmp);
     MatrixMul8x8(Tmp, DCT8x8Table, D);
 
-    u8* ZZ = (u8*) &ZigZagTable[0][0];
     f32* DD = (f32*) &D[0][0];
 
 #if 0
@@ -270,16 +269,10 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const 
         XMM2 = _mm_div_ps(XMM2, XMM6);
         XMM3 = _mm_div_ps(XMM3, XMM7);
 
-        __m128i XMM8 = _mm_cvttps_epi32((XMM0));
-        __m128i XMM9 = _mm_cvttps_epi32((XMM1));
-        __m128i XMMA = _mm_cvttps_epi32((XMM2));
-        __m128i XMMB = _mm_cvttps_epi32((XMM3));
-
-        XMM8 = _mm_packs_epi32(XMM8, XMM9);
-        XMMA = _mm_packs_epi32(XMMA, XMMB);
-
-        _mm_store_si128((__m128i*) &M[Idx+0], XMM8);
-        _mm_store_si128((__m128i*) &M[Idx+8], XMMA);
+        _mm_store_ps(&M[Idx+0], XMM0);
+        _mm_store_ps(&M[Idx+4], XMM1);
+        _mm_store_ps(&M[Idx+8], XMM2);
+        _mm_store_ps(&M[Idx+12], XMM3);
     }
 #endif
 
@@ -291,70 +284,70 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const 
         K[ZZ[Idx]] = M[Idx];
     }
 #else
-    K[ 0] = M[ 0];
-    K[ 1] = M[ 1];
-    K[ 5] = M[ 2];
-    K[ 6] = M[ 3];
-    K[14] = M[ 4];
-    K[15] = M[ 5];
-    K[27] = M[ 6];
-    K[28] = M[ 7];
-    K[ 2] = M[ 8];
-    K[ 4] = M[ 9];
-    K[ 7] = M[10];
-    K[13] = M[11];
-    K[16] = M[12];
-    K[26] = M[13];
-    K[29] = M[14];
-    K[42] = M[15];
-    K[ 3] = M[16];
-    K[ 8] = M[17];
-    K[12] = M[18];
-    K[17] = M[19];
-    K[25] = M[20];
-    K[30] = M[21];
-    K[41] = M[22];
-    K[43] = M[23];
-    K[ 9] = M[24];
-    K[11] = M[25];
-    K[18] = M[26];
-    K[24] = M[27];
-    K[31] = M[28];
-    K[40] = M[29];
-    K[44] = M[30];
-    K[53] = M[31];
-    K[10] = M[32];
-    K[19] = M[33];
-    K[23] = M[34];
-    K[32] = M[35];
-    K[39] = M[36];
-    K[45] = M[37];
-    K[52] = M[38];
-    K[54] = M[39];
-    K[20] = M[40];
-    K[22] = M[41];
-    K[33] = M[42];
-    K[38] = M[43];
-    K[46] = M[44];
-    K[51] = M[45];
-    K[55] = M[46];
-    K[60] = M[47];
-    K[21] = M[48];
-    K[34] = M[49];
-    K[37] = M[50];
-    K[47] = M[51];
-    K[50] = M[52];
-    K[56] = M[53];
-    K[59] = M[54];
-    K[61] = M[55];
-    K[35] = M[56];
-    K[36] = M[57];
-    K[48] = M[58];
-    K[49] = M[59];
-    K[57] = M[60];
-    K[58] = M[61];
-    K[62] = M[62];
-    K[63] = M[63];
+    K[ 0] = (i16) M[ 0];
+    K[ 1] = (i16) M[ 1];
+    K[ 5] = (i16) M[ 2];
+    K[ 6] = (i16) M[ 3];
+    K[14] = (i16) M[ 4];
+    K[15] = (i16) M[ 5];
+    K[27] = (i16) M[ 6];
+    K[28] = (i16) M[ 7];
+    K[ 2] = (i16) M[ 8];
+    K[ 4] = (i16) M[ 9];
+    K[ 7] = (i16) M[10];
+    K[13] = (i16) M[11];
+    K[16] = (i16) M[12];
+    K[26] = (i16) M[13];
+    K[29] = (i16) M[14];
+    K[42] = (i16) M[15];
+    K[ 3] = (i16) M[16];
+    K[ 8] = (i16) M[17];
+    K[12] = (i16) M[18];
+    K[17] = (i16) M[19];
+    K[25] = (i16) M[20];
+    K[30] = (i16) M[21];
+    K[41] = (i16) M[22];
+    K[43] = (i16) M[23];
+    K[ 9] = (i16) M[24];
+    K[11] = (i16) M[25];
+    K[18] = (i16) M[26];
+    K[24] = (i16) M[27];
+    K[31] = (i16) M[28];
+    K[40] = (i16) M[29];
+    K[44] = (i16) M[30];
+    K[53] = (i16) M[31];
+    K[10] = (i16) M[32];
+    K[19] = (i16) M[33];
+    K[23] = (i16) M[34];
+    K[32] = (i16) M[35];
+    K[39] = (i16) M[36];
+    K[45] = (i16) M[37];
+    K[52] = (i16) M[38];
+    K[54] = (i16) M[39];
+    K[20] = (i16) M[40];
+    K[22] = (i16) M[41];
+    K[33] = (i16) M[42];
+    K[38] = (i16) M[43];
+    K[46] = (i16) M[44];
+    K[51] = (i16) M[45];
+    K[55] = (i16) M[46];
+    K[60] = (i16) M[47];
+    K[21] = (i16) M[48];
+    K[34] = (i16) M[49];
+    K[37] = (i16) M[50];
+    K[47] = (i16) M[51];
+    K[50] = (i16) M[52];
+    K[56] = (i16) M[53];
+    K[59] = (i16) M[54];
+    K[61] = (i16) M[55];
+    K[35] = (i16) M[56];
+    K[36] = (i16) M[57];
+    K[48] = (i16) M[58];
+    K[49] = (i16) M[59];
+    K[57] = (i16) M[60];
+    K[58] = (i16) M[61];
+    K[62] = (i16) M[62];
+    K[63] = (i16) M[63];
 #endif
 
     i16 PrevDC = *DC;
@@ -363,7 +356,7 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const 
 
     u16 DC_Value;
     u8 DC_Size = EncodeNumber(K[0], &DC_Value);
-    Assert(PushSymbol(BitStream, DHT_DC, DC_Size));
+    Assert(EncodeSymbol(BitStream, DHT_DC, DC_Size));
     Assert(PushBits(BitStream, DC_Value, DC_Size));
 
     for(u8 Idx = 1;
@@ -379,13 +372,13 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const 
             AC_RunLength++;
             if(Idx == 64)
             {
-                Assert(PushSymbol(BitStream, DHT_AC, 0x00));
+                Assert(EncodeSymbol(BitStream, DHT_AC, 0x00));
 
                 return 1;
             }
             else if(AC_RunLength == 16)
             {
-                Assert(PushSymbol(BitStream, DHT_AC, 0xF0));
+                Assert(EncodeSymbol(BitStream, DHT_AC, 0xF0));
 
                 AC_RunLength = 0;
             }
@@ -394,14 +387,14 @@ static int PushPixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const 
         u16 AC_Value;
         u8 AC_Size = EncodeNumber(K[Idx], &AC_Value);
         u8 AC_RS = (AC_RunLength << 4) | AC_Size;
-        Assert(PushSymbol(BitStream, DHT_AC, AC_RS));
+        Assert(EncodeSymbol(BitStream, DHT_AC, AC_RS));
         Assert(PushBits(BitStream, AC_Value, AC_Size));
     }
 
     return 1;
 }
 
-static int DecodePixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
     i16 Z[64] = {0};
 
@@ -454,7 +447,8 @@ static int DecodePixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const 
         Z[Idx] = (i16) CLAMP(V, -32768, 32767);
     }
 
-    i16 C[8][8];
+    ALIGNED(16) f32 C[8][8];
+    ALIGNED(16) f32 Tmp[8][8];
 
     for(u8 Y = 0;
         Y < 8;
@@ -466,53 +460,12 @@ static int DecodePixels(bit_stream* BitStream, i8 P[8][8], const u8* DQT, const 
         {
             u8 Index = ZigZagTable[Y][X];
 
-            C[Y][X] = Z[Index];
+            C[X][Y] = Z[Index];
         }
     }
 
-    f32 Tmp[8][8];
-
-    for(u8 Y = 0;
-        Y < 8;
-        Y++)
-    {
-        for(u8 X = 0;
-            X < 8;
-            X++)
-        {
-            f32 S = 0;
-
-            for(u8 K = 0;
-                K < 8;
-                K++)
-            {
-                S += tDCT8x8Table[Y][K] * C[K][X];
-            }
-
-            Tmp[Y][X] = S;
-        }
-    }
-
-    for(u8 Y = 0;
-        Y < 8;
-        Y++)
-    {
-        for(u8 X = 0;
-            X < 8;
-            X++)
-        {
-            f32 S = 0;
-
-            for(u8 K = 0;
-                K < 8;
-                K++)
-            {
-                S += Tmp[Y][K] * DCT8x8Table[K][X];
-            }
-
-            P[Y][X] = (i8) CLAMP(S, -128, 127);
-        }
-    }
+    MatrixMul8x8(tDCT8x8Table, C, Tmp);
+    MatrixMul8x8(Tmp, tDCT8x8Table, P);
 
     return 1;
 }
@@ -796,12 +749,12 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
                     KX < SX;
                     KX++)
                 {
-                    Assert(PushPixels(BitStream, Lum[KY][KX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
+                    Assert(EncodePixels(BitStream, Lum[KY][KX], DQT_Y, DHT_Y_DC, DHT_Y_AC, &DC_Y));
                 }
             }
 
-            Assert(PushPixels(BitStream, Cb[0][0], DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
-            Assert(PushPixels(BitStream, Cr[0][0], DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+            Assert(EncodePixels(BitStream, Cb[0][0], DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
+            Assert(EncodePixels(BitStream, Cr[0][0], DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
 
             Col += 8 * 4 * SX;
         }
@@ -845,9 +798,9 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
             BlockX < NumBlocksX;
             BlockX++)
         {
-            i8 Lum[2][2][8][8];
-            i8 Cb[8][8];
-            i8 Cr[8][8];
+            ALIGNED(16) f32 Lum[2][2][8][8];
+            ALIGNED(16) f32 Cb[8][8];
+            ALIGNED(16) f32 Cr[8][8];
 
             for(u8 KY = 0;
                 KY < SY;
@@ -881,9 +834,9 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
                 {
                     // TODO: SIMD!!!
 
-                    u8 Y_value = Lum[Y/8][X/8][Y&7][X&7] + 128;
-                    i8 Cb_value = Cb[Y/SY][X/SX];
-                    i8 Cr_value = Cr[Y/SY][X/SX];
+                    f32 Y_value = Lum[Y/8][X/8][Y&7][X&7] + 128;
+                    f32 Cb_value = Cb[Y/SY][X/SX];
+                    f32 Cr_value = Cr[Y/SY][X/SX];
 
                     f32 B = Y_value + 1.772F * Cb_value;
                     f32 G = Y_value - 0.344136F * Cb_value - 0.714136F * Cr_value;
