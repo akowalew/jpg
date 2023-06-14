@@ -58,5 +58,9 @@ int main(int Argc, char** Argv)
 
     TIMING_FINI("Done");
 
+#if 1
+    PlatformShowBitmap(&Bitmap, "Bitmap");
+#endif
+
     return EXIT_SUCCESS;
 }

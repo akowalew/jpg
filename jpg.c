@@ -813,10 +813,10 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
 }
 
 static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap, 
-                    const u8* DQT_Y, const u8* DQT_Chroma, 
-                    const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
-                    const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
-                    u8 SX, u8 SY)
+                       const u8* DQT_Y, const u8* DQT_Chroma, 
+                       const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
+                       const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
+                       u8 SX, u8 SY)
 {
     Assert(SX <= 2);
     Assert(SY <= 2);
@@ -1261,8 +1261,6 @@ static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
 
 static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 {
-    TIMING_TICK("Start of headers");
-
     u16* MarkerAt = PopU16(Buffer);
     Assert(MarkerAt);
 
@@ -1343,29 +1341,17 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 
             case JPEG_DHT:
             {
-                TIMING_TICK("Start of DHT");
-
                 Assert(Length >= sizeof(*DHT));
                 DHT = Payload;
                 Length -= sizeof(*DHT);
 
-                usz Total = 0;
-                for(u8 Idx = 0;
-                    Idx < ArrayCount(DHT->Counts);
-                    Idx++)
-                {
-                    // TODO: SIMD
-                    Total += DHT->Counts[Idx];
-                }
-
+                usz Total = Sum16xU8(DHT->Counts);
                 Assert(Length == Total);
                 u8* HuffmanCodes = DHT->Values;
 
                 Assert(DHT->TableClass < 2);
                 Assert(DHT->TableId < 2);
                 DHTs[DHT->TableId][DHT->TableClass] = DHT;
-
-                TIMING_TICK("End of DHT");
             } break;
 
             case JPEG_SOS:
@@ -1392,8 +1378,6 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 u16 ZXSX = ZX*SX;
                 u16 ZYSY = ZY*SY;
 
-                TIMING_TICK("Start of scan");
-
                 Bitmap->Width = ((SOF0->ImageWidth + ZXSX - 1) / ZXSX) * ZXSX;
                 Bitmap->Height = ((SOF0->ImageHeight + ZYSY - 1) / ZYSY) * ZYSY;
                 Bitmap->Pitch = Bitmap->Width * 4;
@@ -1407,16 +1391,16 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 BitStream.Buf = 0;
                 BitStream.Len = 0;
 
+                TIMING_TICK("Decoding of image");
+
                 Assert(DecodeImage(&BitStream, Bitmap, 
-                                DQTs[0], DQTs[1],
-                                DHTs[0][0]->Counts, DHTs[0][1]->Counts,
-                                DHTs[1][0]->Counts, DHTs[1][1]->Counts,
-                                SX, SY));
+                                   DQTs[0], DQTs[1],
+                                   DHTs[0][0]->Counts, DHTs[0][1]->Counts,
+                                   DHTs[1][0]->Counts, DHTs[1][1]->Counts,
+                                   SX, SY));
 
                 Bitmap->Width = SOF0->ImageWidth;
                 Bitmap->Height = SOF0->ImageHeight;
-
-                TIMING_TICK("End of scan");
 
 #if 0
                 PlatformShowBitmap(Bitmap, "Decoded JPEG");

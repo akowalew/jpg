@@ -286,6 +286,32 @@ static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
     return Result;
 }
 
+static usz Sum16xU8(u8 Values[16])
+{
+    usz Result = 0;
+
+#if 0
+    for(u8 Idx = 0;
+        Idx < ArrayCount(DHT->Counts);
+        Idx++)
+    {
+        // TODO: SIMD
+        Result += DHT->Counts[Idx];
+    }
+#else
+    __m128i XMM0 = _mm_loadu_si128((__m128i*) Values);
+    __m256i YMM0 = _mm256_cvtepi8_epi16(XMM0);
+    __m256i YMM1 = _mm256_permute2x128_si256(YMM0, YMM0, 0x01);
+    YMM0 = _mm256_hadd_epi16(YMM0, YMM1);
+    YMM0 = _mm256_hadd_epi16(YMM0, YMM0);
+    YMM0 = _mm256_hadd_epi16(YMM0, YMM0);
+    YMM0 = _mm256_hadd_epi16(YMM0, YMM0);
+    Result = _mm256_extract_epi16(YMM0, 0);
+#endif
+
+    return Result;
+}
+
 typedef struct
 {
     const char* Description;
