@@ -416,6 +416,45 @@ static void VectorDiv64(const f32 Left[64], const f32 Right[64], f32 Output[64])
 #endif
 }
 
+static void VectorMul64(const f32 Left[64], const f32 Right[64], f32 Output[64])
+{
+#if 0
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        f32 Div = K[Idx] / DQT[Idx];
+
+        Z[Idx] = (i16)Div;
+    }
+#else
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx += 16)
+    {
+        __m128 XMM0 = _mm_load_ps(&Left[Idx+0]);
+        __m128 XMM1 = _mm_load_ps(&Left[Idx+4]);
+        __m128 XMM2 = _mm_load_ps(&Left[Idx+8]);
+        __m128 XMM3 = _mm_load_ps(&Left[Idx+12]);
+
+        __m128 XMM4 = _mm_load_ps(&Right[Idx+0]);
+        __m128 XMM5 = _mm_load_ps(&Right[Idx+4]);
+        __m128 XMM6 = _mm_load_ps(&Right[Idx+8]);
+        __m128 XMM7 = _mm_load_ps(&Right[Idx+12]);
+
+        XMM0 = _mm_mul_ps(XMM0, XMM4);
+        XMM1 = _mm_mul_ps(XMM1, XMM5);
+        XMM2 = _mm_mul_ps(XMM2, XMM6);
+        XMM3 = _mm_mul_ps(XMM3, XMM7);
+
+        _mm_store_ps(&Output[Idx+0], XMM0);
+        _mm_store_ps(&Output[Idx+4], XMM1);
+        _mm_store_ps(&Output[Idx+8], XMM2);
+        _mm_store_ps(&Output[Idx+12], XMM3);
+    }
+#endif
+}
+
 typedef struct
 {
     const char* Description;

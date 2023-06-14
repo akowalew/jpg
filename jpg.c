@@ -337,14 +337,6 @@ static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, cons
         Idx++;
     }
 
-    for(Idx = 0;
-        Idx < 64;
-        Idx++)
-    {
-        float V = Z[Idx] * DQT[Idx];
-        Z[Idx] = (i16) CLAMP(V, -32768, 32767);
-    }
-
     ALIGNED(16) f32 C[8][8];
     ALIGNED(16) f32 Tmp[8][8];
 
@@ -362,6 +354,7 @@ static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, cons
         }
     }
 
+    VectorMul64(&C[0][0], DQT, &C[0][0]);
     MatrixMul8x8T(tDCT8x8Table, C, Tmp);
     MatrixMul8x8T(Tmp, tDCT8x8Table, P);
 
@@ -1171,11 +1164,19 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 DQT = Payload;
 
                 Assert(DQT->Id < ArrayCount(DQTs));
-                for(usz Idx = 0;
-                    Idx < 64;
-                    Idx++)
+
+                for(u8 Y = 0;
+                    Y < 8;
+                    Y++)
                 {
-                    DQTs[DQT->Id][Idx] = DQT->Coefficients[Idx];
+                    for(u8 X = 0;
+                        X < 8;
+                        X++)
+                    {
+                        u8 Index = ZigZagTable[Y][X];
+
+                        DQTs[DQT->Id][X*8+Y] = DQT->Coefficients[Index];
+                    }
                 }
             } break;
 
