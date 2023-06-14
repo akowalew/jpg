@@ -154,127 +154,26 @@ static int EncodeSymbol(bit_stream* BitStream, const u32* DHT, u8 Value)
     }
 #else
     u32 LenCode = DHT[Value];
+    Assert(LenCode);
+
     u16 Code = (LenCode & 0xFFFF);
     u8 Len = (u8) (LenCode >> 16);
-    Assert(Len);
     return PushBits(BitStream, Code, Len);
 #endif
 
     return 0;
 }
 
-static void MatrixMul8x8(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
-{
-    for(u8 Y = 0;
-        Y < 8;
-        Y++)
-    {
-        __m128 XMM0 = _mm_load_ps(&Left[Y][0]);
-        __m128 XMM1 = _mm_load_ps(&Left[Y][4]);
-
-        for(u8 X = 0;
-            X < 8;
-            X += 4)
-        {
-#if 1
-            __m128 XMM2 = _mm_load_ps(&RightT[X][0]);
-            __m128 XMM3 = _mm_load_ps(&RightT[X][4]);
-
-            __m128 XMM4 = _mm_load_ps(&RightT[X+1][0]);
-            __m128 XMM5 = _mm_load_ps(&RightT[X+1][4]);
-            
-            __m128 XMM6 = _mm_load_ps(&RightT[X+2][0]);
-            __m128 XMM7 = _mm_load_ps(&RightT[X+2][4]);
-
-            __m128 XMM8 = _mm_load_ps(&RightT[X+3][0]);
-            __m128 XMM9 = _mm_load_ps(&RightT[X+3][4]);
-
-            XMM2 = _mm_mul_ps(XMM0, XMM2);
-            XMM3 = _mm_mul_ps(XMM1, XMM3);
-
-            XMM4 = _mm_mul_ps(XMM0, XMM4);
-            XMM5 = _mm_mul_ps(XMM1, XMM5);
-
-            XMM6 = _mm_mul_ps(XMM0, XMM6);
-            XMM7 = _mm_mul_ps(XMM1, XMM7);
-
-            XMM8 = _mm_mul_ps(XMM0, XMM8);
-            XMM9 = _mm_mul_ps(XMM1, XMM9);
-
-            XMM2 = _mm_hadd_ps(XMM2, XMM3);
-            XMM4 = _mm_hadd_ps(XMM4, XMM5);
-            XMM6 = _mm_hadd_ps(XMM6, XMM7);
-            XMM8 = _mm_hadd_ps(XMM8, XMM9);
-
-            XMM2 = _mm_hadd_ps(XMM2, XMM4);
-            XMM6 = _mm_hadd_ps(XMM6, XMM8);
-
-            XMM2 = _mm_hadd_ps(XMM2, XMM6);
-
-            _mm_store_ps(&Output[Y][X], XMM2);
-#else
-            f32 S = 0;
-
-            for(u8 K = 0;
-                K < 8;
-                K++)
-            {
-                S += DCT8x8Table[Y][K] * P[X][K];
-            }
-
-            Tmp[Y][X] = S;
-#endif
-        }
-    }
-}
-
 static int EncodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const u32* DHT_DC, const u32* DHT_AC, i16* DC)
 {
     ALIGNED(16) f32 Tmp[8][8];
     ALIGNED(16) f32 D[8][8];
-    ALIGNED(16) f32 M[64];
     ALIGNED(16) i16 K[64];
+    f32* M = &D[0][0];
 
-    MatrixMul8x8(DCT8x8Table, P, Tmp);
-    MatrixMul8x8(Tmp, DCT8x8Table, D);
-
-    f32* DD = (f32*) &D[0][0];
-
-#if 0
-    for(u8 Idx = 0;
-        Idx < 64;
-        Idx++)
-    {
-        f32 Div = K[Idx] / DQT[Idx];
-
-        Z[Idx] = (i16)Div;
-    }
-#else
-    for(u8 Idx = 0;
-        Idx < 64;
-        Idx += 16)
-    {
-        __m128 XMM0 = _mm_load_ps(&DD[Idx+0]);
-        __m128 XMM1 = _mm_load_ps(&DD[Idx+4]);
-        __m128 XMM2 = _mm_load_ps(&DD[Idx+8]);
-        __m128 XMM3 = _mm_load_ps(&DD[Idx+12]);
-
-        __m128 XMM4 = _mm_load_ps(&DQT[Idx+0]);
-        __m128 XMM5 = _mm_load_ps(&DQT[Idx+4]);
-        __m128 XMM6 = _mm_load_ps(&DQT[Idx+8]);
-        __m128 XMM7 = _mm_load_ps(&DQT[Idx+12]);
-
-        XMM0 = _mm_div_ps(XMM0, XMM4);
-        XMM1 = _mm_div_ps(XMM1, XMM5);
-        XMM2 = _mm_div_ps(XMM2, XMM6);
-        XMM3 = _mm_div_ps(XMM3, XMM7);
-
-        _mm_store_ps(&M[Idx+0], XMM0);
-        _mm_store_ps(&M[Idx+4], XMM1);
-        _mm_store_ps(&M[Idx+8], XMM2);
-        _mm_store_ps(&M[Idx+12], XMM3);
-    }
-#endif
+    MatrixMul8x8T(DCT8x8Table, P, Tmp);
+    MatrixMul8x8T(Tmp, DCT8x8Table, D);
+    VectorDiv64(&D[0][0], DQT, M);
 
 #if 0
     for(u8 Idx = 0;
@@ -394,7 +293,7 @@ static int EncodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, cons
     return 1;
 }
 
-static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
+static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
     i16 Z[64] = {0};
 
@@ -442,8 +341,7 @@ static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const
         Idx < 64;
         Idx++)
     {
-        int V = Z[Idx];
-        V *= DQT[Idx];
+        float V = Z[Idx] * DQT[Idx];
         Z[Idx] = (i16) CLAMP(V, -32768, 32767);
     }
 
@@ -464,8 +362,8 @@ static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const u8* DQT, const
         }
     }
 
-    MatrixMul8x8(tDCT8x8Table, C, Tmp);
-    MatrixMul8x8(Tmp, tDCT8x8Table, P);
+    MatrixMul8x8T(tDCT8x8Table, C, Tmp);
+    MatrixMul8x8T(Tmp, tDCT8x8Table, P);
 
     return 1;
 }
@@ -766,7 +664,7 @@ static int EncodeImage(bit_stream* BitStream, bitmap* Bitmap,
 }
 
 static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap, 
-                       const u8* DQT_Y, const u8* DQT_Chroma, 
+                       const f32* DQT_Y, const f32* DQT_Chroma, 
                        const u8* DHT_Y_DC, const u8* DHT_Y_AC, 
                        const u8* DHT_Chroma_DC, const u8* DHT_Chroma_AC,
                        u8 SX, u8 SY)
@@ -1226,7 +1124,7 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
     jpeg_dht* DHT = 0;
     jpeg_sos* SOS = 0;
 
-    u8* DQTs[2] = {0};
+    f32 DQTs[2][64] = {0};
     jpeg_dht* DHTs[2][2] = {0};
 
     while(Buffer->Elapsed)
@@ -1273,7 +1171,12 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 DQT = Payload;
 
                 Assert(DQT->Id < ArrayCount(DQTs));
-                DQTs[DQT->Id] = DQT->Coefficients;
+                for(usz Idx = 0;
+                    Idx < 64;
+                    Idx++)
+                {
+                    DQTs[DQT->Id][Idx] = DQT->Coefficients[Idx];
+                }
             } break;
 
             case JPEG_SOF0:

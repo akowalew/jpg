@@ -286,6 +286,71 @@ static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
     return Result;
 }
 
+static void MatrixMul8x8T(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
+{
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        __m128 XMM0 = _mm_load_ps(&Left[Y][0]);
+        __m128 XMM1 = _mm_load_ps(&Left[Y][4]);
+
+        for(u8 X = 0;
+            X < 8;
+            X += 4)
+        {
+#if 1
+            __m128 XMM2 = _mm_load_ps(&RightT[X][0]);
+            __m128 XMM3 = _mm_load_ps(&RightT[X][4]);
+
+            __m128 XMM4 = _mm_load_ps(&RightT[X+1][0]);
+            __m128 XMM5 = _mm_load_ps(&RightT[X+1][4]);
+            
+            __m128 XMM6 = _mm_load_ps(&RightT[X+2][0]);
+            __m128 XMM7 = _mm_load_ps(&RightT[X+2][4]);
+
+            __m128 XMM8 = _mm_load_ps(&RightT[X+3][0]);
+            __m128 XMM9 = _mm_load_ps(&RightT[X+3][4]);
+
+            XMM2 = _mm_mul_ps(XMM0, XMM2);
+            XMM3 = _mm_mul_ps(XMM1, XMM3);
+
+            XMM4 = _mm_mul_ps(XMM0, XMM4);
+            XMM5 = _mm_mul_ps(XMM1, XMM5);
+
+            XMM6 = _mm_mul_ps(XMM0, XMM6);
+            XMM7 = _mm_mul_ps(XMM1, XMM7);
+
+            XMM8 = _mm_mul_ps(XMM0, XMM8);
+            XMM9 = _mm_mul_ps(XMM1, XMM9);
+
+            XMM2 = _mm_hadd_ps(XMM2, XMM3);
+            XMM4 = _mm_hadd_ps(XMM4, XMM5);
+            XMM6 = _mm_hadd_ps(XMM6, XMM7);
+            XMM8 = _mm_hadd_ps(XMM8, XMM9);
+
+            XMM2 = _mm_hadd_ps(XMM2, XMM4);
+            XMM6 = _mm_hadd_ps(XMM6, XMM8);
+
+            XMM2 = _mm_hadd_ps(XMM2, XMM6);
+
+            _mm_store_ps(&Output[Y][X], XMM2);
+#else
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += DCT8x8Table[Y][K] * P[X][K];
+            }
+
+            Tmp[Y][X] = S;
+#endif
+        }
+    }
+}
+
 static usz Sum16xU8(u8 Values[16])
 {
     usz Result = 0;
@@ -310,6 +375,45 @@ static usz Sum16xU8(u8 Values[16])
 #endif
 
     return Result;
+}
+
+static void VectorDiv64(const f32 Left[64], const f32 Right[64], f32 Output[64])
+{
+#if 0
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx++)
+    {
+        f32 Div = K[Idx] / DQT[Idx];
+
+        Z[Idx] = (i16)Div;
+    }
+#else
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx += 16)
+    {
+        __m128 XMM0 = _mm_load_ps(&Left[Idx+0]);
+        __m128 XMM1 = _mm_load_ps(&Left[Idx+4]);
+        __m128 XMM2 = _mm_load_ps(&Left[Idx+8]);
+        __m128 XMM3 = _mm_load_ps(&Left[Idx+12]);
+
+        __m128 XMM4 = _mm_load_ps(&Right[Idx+0]);
+        __m128 XMM5 = _mm_load_ps(&Right[Idx+4]);
+        __m128 XMM6 = _mm_load_ps(&Right[Idx+8]);
+        __m128 XMM7 = _mm_load_ps(&Right[Idx+12]);
+
+        XMM0 = _mm_div_ps(XMM0, XMM4);
+        XMM1 = _mm_div_ps(XMM1, XMM5);
+        XMM2 = _mm_div_ps(XMM2, XMM6);
+        XMM3 = _mm_div_ps(XMM3, XMM7);
+
+        _mm_store_ps(&Output[Idx+0], XMM0);
+        _mm_store_ps(&Output[Idx+4], XMM1);
+        _mm_store_ps(&Output[Idx+8], XMM2);
+        _mm_store_ps(&Output[Idx+12], XMM3);
+    }
+#endif
 }
 
 typedef struct
