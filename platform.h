@@ -618,6 +618,88 @@ static void BGRAtoYCbCr_420_8x8(void* Data, usz Pitch, f32 Lum[2][2][8][8], f32 
 #endif
 }
 
+static void YCbCr_to_BGRA_8x8(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
+{
+    u8* Row = Data;
+
+    for(u32 KY = 0;
+        KY < 8;
+        KY++)
+    {
+        u8* Col = Row;
+
+        for(u32 KX = 0;
+            KX < 8;
+            KX++)
+        {
+            u32 Idx = KY*8 + KX;
+
+            f32 Y_value  = Y[Idx] + 128;
+            f32 Cb_value = Cb[Idx];
+            f32 Cr_value = Cr[Idx];
+
+            f32 B = Y_value + 1.772F    * Cb_value;
+            f32 G = Y_value - 0.344136F * Cb_value - 0.714136F * Cr_value;
+            f32 R = Y_value                        + 1.402F    * Cr_value;
+
+            u32 Value = ((u8)CLAMP(B, 0, 255) << 0) |
+                        ((u8)CLAMP(G, 0, 255) << 8) |
+                        ((u8)CLAMP(R, 0, 255) << 16);
+
+            *(u32*)(Col) = Value;
+
+            Col += 4;
+        }
+
+        Row += Pitch;
+    }
+}
+
+static void YCbCr_to_BGRA_420_8x8(u8* Data, usz Pitch, f32 Y[2][2][8][8], f32 Cb[8][8], f32 Cr[8][8])
+{
+#if 0
+    u8* SubRow = Data;
+
+    u32 SubY = 2 << 3;
+    u32 SubX = 2 << 3;
+
+    for(u32 Row = 0;
+        Row < SubY;
+        Row++)
+    {
+        u8* SubCol = SubRow;
+
+        for(u32 Col = 0;
+            Col < SubX;
+            Col++)
+        {
+            // TODO: SIMD!!!
+
+            f32 Y_value = Y[Row/8][Col/8][Row&7][Col&7] + 128;
+            f32 Cb_value = Cb[Row/2][Col/2];
+            f32 Cr_value = Cr[Row/2][Col/2];
+
+            f32 B = Y_value + 1.772F    * Cb_value;
+            f32 G = Y_value - 0.344136F * Cb_value - 0.714136F * Cr_value;
+            f32 R = Y_value                        + 1.402F    * Cr_value;
+
+            SubCol[0] = (u8) CLAMP(B, 0, 255);
+            SubCol[1] = (u8) CLAMP(G, 0, 255);
+            SubCol[2] = (u8) CLAMP(R, 0, 255);
+
+            SubCol += 4;
+        }
+
+        SubRow += Pitch;
+    }
+#else
+    YCbCr_to_BGRA_8x8(Data,                 Pitch, &Y[0][0][0][0], &Cb[0][0], &Cr[0][0]);
+    YCbCr_to_BGRA_8x8(Data + 8*4,           Pitch, &Y[0][1][0][0], &Cb[0][0], &Cr[0][0]);
+    YCbCr_to_BGRA_8x8(Data + 8*Pitch,       Pitch, &Y[1][0][0][0], &Cb[0][0], &Cr[0][0]);
+    YCbCr_to_BGRA_8x8(Data + 8*Pitch + 8*4, Pitch, &Y[1][1][0][0], &Cb[0][0], &Cr[0][0]);
+#endif
+}
+
 typedef struct
 {
     const char* Description;

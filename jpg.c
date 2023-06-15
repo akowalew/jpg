@@ -631,40 +631,7 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
             Assert(DecodePixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
             Assert(DecodePixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
 
-            u8* SubRow = Col;
-
-            u32 SubY = SY << 3;
-            u32 SubX = SX << 3;
-
-            for(u32 Y = 0;
-                Y < SubY;
-                Y++)
-            {
-                u8* SubCol = SubRow;
-
-                for(u32 X = 0;
-                    X < SubX;
-                    X++)
-                {
-                    // TODO: SIMD!!!
-
-                    f32 Y_value = Lum[Y/8][X/8][Y&7][X&7] + 128;
-                    f32 Cb_value = Cb[Y/SY][X/SX];
-                    f32 Cr_value = Cr[Y/SY][X/SX];
-
-                    f32 B = Y_value + 1.772F * Cb_value;
-                    f32 G = Y_value - 0.344136F * Cb_value - 0.714136F * Cr_value;
-                    f32 R = Y_value + 1.402F * Cr_value;
-
-                    SubCol[0] = (u8) CLAMP(B, 0, 255);
-                    SubCol[1] = (u8) CLAMP(G, 0, 255);
-                    SubCol[2] = (u8) CLAMP(R, 0, 255);
-
-                    SubCol += 4;
-                }
-
-                SubRow += Bitmap->Pitch;
-            }
+            YCbCr_to_BGRA_420_8x8(Col, Bitmap->Pitch, Lum, Cb, Cr);
 
             Col += 8 * 4 * SX;
         }
