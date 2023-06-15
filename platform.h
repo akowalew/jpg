@@ -618,9 +618,20 @@ static void BGRAtoYCbCr_420_8x8(void* Data, usz Pitch, f32 Lum[2][2][8][8], f32 
 #endif
 }
 
+#pragma optimize("g", on)
 static void YCbCr_to_BGRA_8x8(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
 {
     u8* Row = Data;
+
+    __m128 XMM3 = _mm_set1_ps(128);
+    __m128 XMM4 = _mm_set1_ps(1.772F);
+    __m128 XMM5 = _mm_set1_ps(-0.344136F);
+    __m128 XMM6 = _mm_set1_ps(-0.714136F);
+    __m128 XMM7 = _mm_set1_ps(+1.402F);
+    __m128i XMMF = _mm_setr_epi8(0x0, 0x4, 0x8, 0xC, 
+                                 0x1, 0x5, 0x9, 0xD,
+                                 0x2, 0x6, 0xA, 0xE,
+                                 0x3, 0x7, 0xB, 0xF);
 
     for(u32 KY = 0;
         KY < 8;
@@ -628,11 +639,12 @@ static void YCbCr_to_BGRA_8x8(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
     {
         u8* Col = Row;
 
+#if 0
         for(u32 KX = 0;
             KX < 8;
             KX++)
         {
-            u32 Idx = KY*8 + KX;
+            u32 Idx = (KY<<3) + KX;
 
             f32 Y_value  = Y[Idx] + 128;
             f32 Cb_value = Cb[Idx];
@@ -650,54 +662,50 @@ static void YCbCr_to_BGRA_8x8(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
 
             Col += 4;
         }
+#else
+        for(u32 KX = 0;
+            KX < 8;
+            KX += 4)
+        {
+            u32 Idx = (KY<<3) + KX;
+
+            __m128 XMM0 = _mm_add_ps(XMM3, _mm_load_ps(&Y[Idx]));
+            __m128 XMM1 = _mm_load_ps(&Cb[Idx]);
+            __m128 XMM2 = _mm_load_ps(&Cr[Idx]);
+
+            __m128 XMM8 = _mm_add_ps(XMM0, _mm_mul_ps(XMM1, XMM4));
+            __m128 XMM9 = _mm_add_ps(XMM0, _mm_add_ps(_mm_mul_ps(XMM1, XMM5), _mm_mul_ps(XMM2, XMM6)));
+            __m128 XMMA = _mm_add_ps(XMM0, _mm_mul_ps(XMM2, XMM7));
+
+            __m128i XMMB = _mm_cvtps_epi32(XMM8); // BBBB
+            __m128i XMMC = _mm_cvtps_epi32(XMM9); // GGGG
+            __m128i XMMD = _mm_cvtps_epi32(XMMA); // RRRR
+            __m128i XMME = _mm_setzero_si128();   // AAAA
+
+            XMMB = _mm_packus_epi32(XMMB, XMMC); // BBBBGGGG
+            XMMD = _mm_packus_epi32(XMMD, XMME); // RRRRAAAA
+
+            XMMB = _mm_packus_epi16(XMMB, XMMD); // BBBBGGGGRRRRAAAA
+
+            XMMB = _mm_shuffle_epi8(XMMB, XMMF); // BGRABGRABGRABGRA
+
+            _mm_stream_si128((__m128i*) Col, XMMB);
+
+            Col += 16;
+        }
+#endif
 
         Row += Pitch;
     }
 }
+#pragma optimize("", off)
 
 static void YCbCr_to_BGRA_420_8x8(u8* Data, usz Pitch, f32 Y[2][2][8][8], f32 Cb[8][8], f32 Cr[8][8])
 {
-#if 0
-    u8* SubRow = Data;
-
-    u32 SubY = 2 << 3;
-    u32 SubX = 2 << 3;
-
-    for(u32 Row = 0;
-        Row < SubY;
-        Row++)
-    {
-        u8* SubCol = SubRow;
-
-        for(u32 Col = 0;
-            Col < SubX;
-            Col++)
-        {
-            // TODO: SIMD!!!
-
-            f32 Y_value = Y[Row/8][Col/8][Row&7][Col&7] + 128;
-            f32 Cb_value = Cb[Row/2][Col/2];
-            f32 Cr_value = Cr[Row/2][Col/2];
-
-            f32 B = Y_value + 1.772F    * Cb_value;
-            f32 G = Y_value - 0.344136F * Cb_value - 0.714136F * Cr_value;
-            f32 R = Y_value                        + 1.402F    * Cr_value;
-
-            SubCol[0] = (u8) CLAMP(B, 0, 255);
-            SubCol[1] = (u8) CLAMP(G, 0, 255);
-            SubCol[2] = (u8) CLAMP(R, 0, 255);
-
-            SubCol += 4;
-        }
-
-        SubRow += Pitch;
-    }
-#else
     YCbCr_to_BGRA_8x8(Data,                 Pitch, &Y[0][0][0][0], &Cb[0][0], &Cr[0][0]);
     YCbCr_to_BGRA_8x8(Data + 8*4,           Pitch, &Y[0][1][0][0], &Cb[0][0], &Cr[0][0]);
     YCbCr_to_BGRA_8x8(Data + 8*Pitch,       Pitch, &Y[1][0][0][0], &Cb[0][0], &Cr[0][0]);
     YCbCr_to_BGRA_8x8(Data + 8*Pitch + 8*4, Pitch, &Y[1][1][0][0], &Cb[0][0], &Cr[0][0]);
-#endif
 }
 
 typedef struct
