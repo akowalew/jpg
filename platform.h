@@ -286,7 +286,33 @@ static int PushBits(bit_stream* BitStream, u16 Value, u8 Size)
     return Result;
 }
 
-static void MatrixMul8x8T(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
+#pragma optimize("g", on)
+
+static void MatrixMul8x8T_generic(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
+{
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        for(u8 X = 0;
+            X < 8;
+            X += 4)
+        {
+            f32 S = 0;
+
+            for(u8 K = 0;
+                K < 8;
+                K++)
+            {
+                S += Left[Y][K] * RightT[X][K];
+            }
+
+            Output[Y][X] = S;
+        }
+    }
+}
+
+static void MatrixMul8x8T_sse(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
 {
     for(u8 Y = 0;
         Y < 8;
@@ -299,9 +325,6 @@ static void MatrixMul8x8T(const f32 Left[8][8], const f32 RightT[8][8], f32 Outp
             X < 8;
             X += 4)
         {
-#if 1
-            // TODO: AVX2!!!
-
             __m128 XMM2 = _mm_load_ps(&RightT[X][0]);
             __m128 XMM3 = _mm_load_ps(&RightT[X][4]);
 
@@ -337,21 +360,54 @@ static void MatrixMul8x8T(const f32 Left[8][8], const f32 RightT[8][8], f32 Outp
             XMM2 = _mm_hadd_ps(XMM2, XMM6);
 
             _mm_store_ps(&Output[Y][X], XMM2);
-#else
-            f32 S = 0;
-
-            for(u8 K = 0;
-                K < 8;
-                K++)
-            {
-                S += DCT8x8Table[Y][K] * P[X][K];
-            }
-
-            Tmp[Y][X] = S;
-#endif
         }
     }
 }
+
+static void MatrixMul8x8T_avx(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
+{
+    __m256 YMM0 = _mm256_load_ps(&RightT[0][0]);
+    __m256 YMM1 = _mm256_load_ps(&RightT[1][0]);
+    __m256 YMM2 = _mm256_load_ps(&RightT[2][0]);
+    __m256 YMM3 = _mm256_load_ps(&RightT[3][0]);
+    __m256 YMM4 = _mm256_load_ps(&RightT[4][0]);
+    __m256 YMM5 = _mm256_load_ps(&RightT[5][0]);
+    __m256 YMM6 = _mm256_load_ps(&RightT[6][0]);
+    __m256 YMM7 = _mm256_load_ps(&RightT[7][0]);
+
+    for(u8 Y = 0;
+        Y < 8;
+        Y++)
+    {
+        __m256 YMMF = _mm256_load_ps(&Left[Y][0]);
+
+        __m256 YMM8 = _mm256_mul_ps(YMMF, YMM0);
+        __m256 YMM9 = _mm256_mul_ps(YMMF, YMM1);
+        __m256 YMMA = _mm256_mul_ps(YMMF, YMM2);
+        __m256 YMMB = _mm256_mul_ps(YMMF, YMM3);
+        __m256 YMMC = _mm256_mul_ps(YMMF, YMM4);
+        __m256 YMMD = _mm256_mul_ps(YMMF, YMM5);
+        __m256 YMME = _mm256_mul_ps(YMMF, YMM6);
+
+        YMM8 = _mm256_hadd_ps(YMM8, YMM9);
+        YMMA = _mm256_hadd_ps(YMMA, YMMB);
+        YMMC = _mm256_hadd_ps(YMMC, YMMD);
+
+        YMM9 = _mm256_mul_ps(YMMF, YMM7);
+        YMME = _mm256_hadd_ps(YMME, YMM9);
+
+        YMM8 = _mm256_hadd_ps(YMM8, YMMA);
+        YMMC = _mm256_hadd_ps(YMMC, YMME);
+
+        YMM8 = _mm256_hadd_ps(YMM8, YMMC);
+
+        _mm256_store_ps(&Output[Y][0], YMM8);
+
+        // TODO: Buggy!
+    }
+}
+
+#define MatrixMul8x8T(...) MatrixMul8x8T_sse(__VA_ARGS__)
 
 static usz Sum16xU8(u8 Values[16])
 {
@@ -420,24 +476,22 @@ static void VectorDiv64(const f32 Left[64], const f32 Right[64], f32 Output[64])
 #endif
 }
 
-static void VectorMul64(const f32 Left[64], const f32 Right[64], f32 Output[64])
+static void VectorMul64_generic(const f32 Left[64], const f32 Right[64], f32 Output[64])
 {
-#if 0
     for(u8 Idx = 0;
         Idx < 64;
         Idx++)
     {
-        f32 Div = K[Idx] / DQT[Idx];
-
-        Z[Idx] = (i16)Div;
+        Output[Idx] = Left[Idx] * Right[Idx];
     }
-#else
+}
+
+static void VectorMul64_sse(const f32 Left[64], const f32 Right[64], f32 Output[64])
+{
     for(u8 Idx = 0;
         Idx < 64;
         Idx += 16)
     {
-        // TODO: AVX2!!!
-
         __m128 XMM0 = _mm_load_ps(&Left[Idx+0]);
         __m128 XMM1 = _mm_load_ps(&Left[Idx+4]);
         __m128 XMM2 = _mm_load_ps(&Left[Idx+8]);
@@ -458,8 +512,29 @@ static void VectorMul64(const f32 Left[64], const f32 Right[64], f32 Output[64])
         _mm_store_ps(&Output[Idx+8], XMM2);
         _mm_store_ps(&Output[Idx+12], XMM3);
     }
-#endif
 }
+
+static void VectorMul64_avx(const f32 Left[64], const f32 Right[64], f32 Output[64])
+{
+    for(u8 Idx = 0;
+        Idx < 64;
+        Idx += 16)
+    {
+        __m256 YMM0 = _mm256_load_ps(&Left[Idx+0]);
+        __m256 YMM1 = _mm256_load_ps(&Left[Idx+8]);
+
+        __m256 YMM4 = _mm256_load_ps(&Right[Idx+0]);
+        __m256 YMM5 = _mm256_load_ps(&Right[Idx+8]);
+
+        YMM0 = _mm256_mul_ps(YMM0, YMM4);
+        YMM1 = _mm256_mul_ps(YMM1, YMM5);
+
+        _mm256_store_ps(&Output[Idx+0], YMM0);
+        _mm256_store_ps(&Output[Idx+8], YMM1);
+    }  
+}
+
+#define VectorMul64(...) VectorMul64_sse(__VA_ARGS__)
 
 static void BGRAtoYCbCr_420_8x8(void* Data, usz Pitch, f32 Lum[2][2][8][8], f32 Cb[2][2][8][8], f32 Cr[2][2][8][8])
 {
@@ -618,7 +693,6 @@ static void BGRAtoYCbCr_420_8x8(void* Data, usz Pitch, f32 Lum[2][2][8][8], f32 
 #endif
 }
 
-#pragma optimize("g", on)
 static void YCbCr_to_BGRA_8x8_generic(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
 {
     u8* Row = Data;

@@ -426,6 +426,8 @@ static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, cons
     ALIGNED(32) f32 C[8][8];
     ALIGNED(32) f32 Tmp[8][8];
 
+    // TIMING_TICK("Decompression");
+
     u8 DC_Size;
     Assert(PopSymbol(BitStream, DHT_DC, &DC_Size));
 
@@ -466,6 +468,8 @@ static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, cons
 
         Idx++;
     }
+
+    // TIMING_TICK("Transformation");
 
     DeZigZag64T(&C[0][0], Z);
     VectorMul64(&C[0][0], DQT, &C[0][0]);
