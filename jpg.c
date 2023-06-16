@@ -91,8 +91,11 @@ static i16 DecodeNumber(u8 Size, u16 Value)
     }
 }
 
+#pragma optimize("g", on)
 static int PopSymbol(bit_stream* BitStream, const u8* DHT, u8* Value)
 {
+    // TODO: Handcoded assembly?
+    
     Assert(Refill(BitStream));
 
     const u8* Counts = &DHT[0];
@@ -128,6 +131,7 @@ static int PopSymbol(bit_stream* BitStream, const u8* DHT, u8* Value)
 
     return 0;
 }
+#pragma optimize("", off)
 
 static int EncodeSymbol(bit_stream* BitStream, const u32* DHT, u8 Value)
 {
