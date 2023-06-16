@@ -256,74 +256,111 @@ static void DeZigZag64T(f32* __restrict C, f32* __restrict Z)
             u8 Index = ZigZagTable[Y][X];
 
             C[X][Y] = Z[Index];
+
             printf("    CC[%2d] = Z[%2d];\n", X*8+Y, Index);
         }
     }
-#endif
+#else
+#if 1
     C[ 0] = Z[ 0];
-    C[ 8] = Z[ 1];
-    C[16] = Z[ 5];
-    C[24] = Z[ 6];
-    C[32] = Z[14];
-    C[40] = Z[15];
-    C[48] = Z[27];
-    C[56] = Z[28];
     C[ 1] = Z[ 2];
-    C[ 9] = Z[ 4];
-    C[17] = Z[ 7];
-    C[25] = Z[13];
-    C[33] = Z[16];
-    C[41] = Z[26];
-    C[49] = Z[29];
-    C[57] = Z[42];
     C[ 2] = Z[ 3];
-    C[10] = Z[ 8];
-    C[18] = Z[12];
-    C[26] = Z[17];
-    C[34] = Z[25];
-    C[42] = Z[30];
-    C[50] = Z[41];
-    C[58] = Z[43];
     C[ 3] = Z[ 9];
-    C[11] = Z[11];
-    C[19] = Z[18];
-    C[27] = Z[24];
-    C[35] = Z[31];
-    C[43] = Z[40];
-    C[51] = Z[44];
-    C[59] = Z[53];
     C[ 4] = Z[10];
-    C[12] = Z[19];
-    C[20] = Z[23];
-    C[28] = Z[32];
-    C[36] = Z[39];
-    C[44] = Z[45];
-    C[52] = Z[52];
-    C[60] = Z[54];
     C[ 5] = Z[20];
-    C[13] = Z[22];
-    C[21] = Z[33];
-    C[29] = Z[38];
-    C[37] = Z[46];
-    C[45] = Z[51];
-    C[53] = Z[55];
-    C[61] = Z[60];
     C[ 6] = Z[21];
-    C[14] = Z[34];
-    C[22] = Z[37];
-    C[30] = Z[47];
-    C[38] = Z[50];
-    C[46] = Z[56];
-    C[54] = Z[59];
-    C[62] = Z[61];
     C[ 7] = Z[35];
+
+    C[ 8] = Z[ 1];
+    C[ 9] = Z[ 4];
+    C[10] = Z[ 8];
+    C[11] = Z[11];
+    C[12] = Z[19];
+    C[13] = Z[22];
+    C[14] = Z[34];
     C[15] = Z[36];
+
+    C[16] = Z[ 5];
+    C[17] = Z[ 7];
+    C[18] = Z[12];
+    C[19] = Z[18];
+    C[20] = Z[23];
+    C[21] = Z[33];
+    C[22] = Z[37];
     C[23] = Z[48];
+
+    C[24] = Z[ 6];
+    C[25] = Z[13];
+    C[26] = Z[17];
+    C[27] = Z[24];
+    C[28] = Z[32];
+    C[29] = Z[38];
+    C[30] = Z[47];
     C[31] = Z[49];
+
+    C[32] = Z[14];
+    C[33] = Z[16];
+    C[34] = Z[25];
+    C[35] = Z[31];
+    C[36] = Z[39];
+    C[37] = Z[46];
+    C[38] = Z[50];
     C[39] = Z[57];
+
+    C[40] = Z[15];
+    C[41] = Z[26];
+    C[42] = Z[30];
+    C[43] = Z[40];
+    C[44] = Z[45];
+    C[45] = Z[51];
+    C[46] = Z[56];
     C[47] = Z[58];
+
+    C[48] = Z[27];
+    C[49] = Z[29];
+    C[50] = Z[41];
+    C[51] = Z[44];
+    C[52] = Z[52];
+    C[53] = Z[55];
+    C[54] = Z[59];
     C[55] = Z[62];
+
+    C[56] = Z[28];
+    C[57] = Z[42];
+    C[58] = Z[43];
+    C[59] = Z[53];
+    C[60] = Z[54];
+    C[61] = Z[60];
+    C[62] = Z[61];
     C[63] = Z[63];
+#else
+    __m256i YMM0 = _mm256_setr_epi32( 0,  2,  3,  9, 10, 20, 21, 35);
+    __m256i YMM1 = _mm256_setr_epi32( 1,  4,  8, 11, 19, 22, 34, 36);
+    __m256i YMM2 = _mm256_setr_epi32( 5,  7, 12, 18, 23, 33, 37, 48);
+    __m256i YMM3 = _mm256_setr_epi32( 6, 13, 17, 24, 32, 38, 47, 49);
+    __m256i YMM4 = _mm256_setr_epi32(14, 16, 25, 31, 39, 46, 50, 57);
+    __m256i YMM5 = _mm256_setr_epi32(15, 26, 30, 40, 45, 51, 56, 58);
+    __m256i YMM6 = _mm256_setr_epi32(27, 29, 41, 44, 52, 55, 59, 62);
+    __m256i YMM7 = _mm256_setr_epi32(28, 42, 43, 53, 54, 60, 61, 63);
+
+    __m256  YMM8 = _mm256_i32gather_ps(Z, YMM0, 4);
+    _mm256_store_ps(&C[ 0], YMM8);
+    __m256  YMM9 = _mm256_i32gather_ps(Z, YMM1, 4);
+    _mm256_store_ps(&C[ 8], YMM9);
+    __m256  YMMA = _mm256_i32gather_ps(Z, YMM2, 4);
+    _mm256_store_ps(&C[16], YMMA);
+    __m256  YMMB = _mm256_i32gather_ps(Z, YMM3, 4);
+    _mm256_store_ps(&C[24], YMMB);
+    __m256  YMMC = _mm256_i32gather_ps(Z, YMM4, 4);
+    _mm256_store_ps(&C[32], YMMC);
+    __m256  YMMD = _mm256_i32gather_ps(Z, YMM5, 4);
+    _mm256_store_ps(&C[40], YMMD);
+    __m256  YMME = _mm256_i32gather_ps(Z, YMM6, 4);
+    _mm256_store_ps(&C[48], YMME);
+    __m256  YMMF = _mm256_i32gather_ps(Z, YMM7, 4);
+    _mm256_store_ps(&C[56], YMMF);
+#endif
+#endif
 }
 #pragma optimize("", off)
 
@@ -385,9 +422,9 @@ static int EncodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, cons
 
 static int DecodePixels(bit_stream* BitStream, f32 P[8][8], const f32* DQT, const u8* DHT_DC, const u8* DHT_AC, i16* DC)
 {
-    ALIGNED(16) f32 Z[64] = {0};
-    ALIGNED(16) f32 C[8][8];
-    ALIGNED(16) f32 Tmp[8][8];
+    ALIGNED(32) f32 Z[64] = {0};
+    ALIGNED(32) f32 C[8][8];
+    ALIGNED(32) f32 Tmp[8][8];
 
     u8 DC_Size;
     Assert(PopSymbol(BitStream, DHT_DC, &DC_Size));
@@ -612,9 +649,11 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
             BlockX < NumBlocksX;
             BlockX++)
         {
-            ALIGNED(16) f32 Lum[2][2][8][8];
-            ALIGNED(16) f32 Cb[8][8];
-            ALIGNED(16) f32 Cr[8][8];
+            ALIGNED(32) f32 Lum[2][2][8][8];
+            ALIGNED(32) f32 Cb[8][8];
+            ALIGNED(32) f32 Cr[8][8];
+
+            // TIMING_TICK("Decode pixels");
 
             for(u8 KY = 0;
                 KY < SY;
@@ -630,6 +669,8 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
 
             Assert(DecodePixels(BitStream, Cb, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cb));
             Assert(DecodePixels(BitStream, Cr, DQT_Chroma, DHT_Chroma_DC, DHT_Chroma_AC, &DC_Cr));
+
+            // TIMING_TICK("Color conversion");
 
             YCbCr_to_BGRA_420_8x8(Col, Bitmap->Pitch, Lum, Cb, Cr);
 

@@ -619,19 +619,9 @@ static void BGRAtoYCbCr_420_8x8(void* Data, usz Pitch, f32 Lum[2][2][8][8], f32 
 }
 
 #pragma optimize("g", on)
-static void YCbCr_to_BGRA_8x8(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
+static void YCbCr_to_BGRA_8x8_generic(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
 {
     u8* Row = Data;
-
-    __m128 XMM3 = _mm_set1_ps(128);
-    __m128 XMM4 = _mm_set1_ps(1.772F);
-    __m128 XMM5 = _mm_set1_ps(-0.344136F);
-    __m128 XMM6 = _mm_set1_ps(-0.714136F);
-    __m128 XMM7 = _mm_set1_ps(+1.402F);
-    __m128i XMMF = _mm_setr_epi8(0x0, 0x4, 0x8, 0xC, 
-                                 0x1, 0x5, 0x9, 0xD,
-                                 0x2, 0x6, 0xA, 0xE,
-                                 0x3, 0x7, 0xB, 0xF);
 
     for(u32 KY = 0;
         KY < 8;
@@ -639,7 +629,6 @@ static void YCbCr_to_BGRA_8x8(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
     {
         u8* Col = Row;
 
-#if 0
         for(u32 KX = 0;
             KX < 8;
             KX++)
@@ -662,7 +651,31 @@ static void YCbCr_to_BGRA_8x8(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
 
             Col += 4;
         }
-#else
+
+        Row += Pitch;
+    }
+}
+
+static void YCbCr_to_BGRA_8x8_sse(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
+{
+    u8* Row = Data;
+
+    __m128  XMM3 = _mm_set1_ps(128);
+    __m128  XMM4 = _mm_set1_ps(1.772F);
+    __m128  XMM5 = _mm_set1_ps(-0.344136F);
+    __m128  XMM6 = _mm_set1_ps(-0.714136F);
+    __m128  XMM7 = _mm_set1_ps(+1.402F);
+    __m128i XMMF = _mm_setr_epi8(0x0, 0x4, 0x8, 0xC, 
+                                 0x1, 0x5, 0x9, 0xD,
+                                 0x2, 0x6, 0xA, 0xE,
+                                 0x3, 0x7, 0xB, 0xF);
+
+    for(u32 KY = 0;
+        KY < 8;
+        KY++)
+    {
+        u8* Col = Row;
+
         for(u32 KX = 0;
             KX < 8;
             KX += 4)
@@ -693,20 +706,145 @@ static void YCbCr_to_BGRA_8x8(void* Data, usz Pitch, f32* Y, f32* Cb, f32* Cr)
 
             Col += 16;
         }
-#endif
 
         Row += Pitch;
     }
 }
-#pragma optimize("", off)
 
+static inline void YCbCr_to_BGRA_8x8_avx(void* __restrict Data, usz Pitch, f32* __restrict Y, f32* __restrict Cb, f32* __restrict Cr)
+{
+    u8* Row = Data;
+
+    __m256  XMM3 = _mm256_set1_ps(128);
+    __m256  XMM4 = _mm256_set1_ps(1.772F);
+    __m256  XMM5 = _mm256_set1_ps(-0.344136F);
+    __m256  XMM6 = _mm256_set1_ps(-0.714136F);
+    __m256  XMM7 = _mm256_set1_ps(+1.402F);
+    __m256i XMMF = _mm256_setr_epi8(0x0, 0x4, 0x8, 0xC, 
+                                    0x1, 0x5, 0x9, 0xD,
+                                    0x2, 0x6, 0xA, 0xE,
+                                    0x3, 0x7, 0xB, 0xF,
+                                    0x0, 0x4, 0x8, 0xC, 
+                                    0x1, 0x5, 0x9, 0xD,
+                                    0x2, 0x6, 0xA, 0xE,
+                                    0x3, 0x7, 0xB, 0xF); 
+
+    for(u32 Idx = 0;
+        Idx < 64;
+        Idx += 8)
+    {
+        __m256 XMM1 = _mm256_load_ps(&Cb[Idx]);
+        __m256 XMM2 = _mm256_load_ps(&Cr[Idx]);
+
+        {
+            __m256 XMM0 = _mm256_add_ps(XMM3, _mm256_load_ps(&Y[Idx]));
+
+            __m256 XMM8 = _mm256_fmadd_ps(XMM1, XMM4, XMM0);
+            __m256 XMM9 = _mm256_fmadd_ps(XMM2, XMM6, _mm256_fmadd_ps(XMM1, XMM5, XMM0));
+            __m256 XMMA = _mm256_fmadd_ps(XMM2, XMM7, XMM0);
+
+            __m256i XMMB = _mm256_cvtps_epi32(XMM8); // BBBBBBBB
+            __m256i XMMC = _mm256_cvtps_epi32(XMM9); // GGGGGGGG
+            __m256i XMMD = _mm256_cvtps_epi32(XMMA); // RRRRRRRR
+            __m256i XMME = _mm256_setzero_si256();   // AAAAAAAA
+
+            XMMB = _mm256_packus_epi32(XMMB, XMMC); // BBBBGGGGBBBBGGGG
+            XMMD = _mm256_packus_epi32(XMMD, XMME); // RRRRAAAARRRRAAAA
+
+            XMMB = _mm256_packus_epi16(XMMB, XMMD); // BBBBGGGGRRRRAAAABBBBGGGGRRRRAAAA
+
+            XMMB = _mm256_shuffle_epi8(XMMB, XMMF); // BGRABGRABGRABGRABGRABGRABGRABGRA
+
+            _mm256_stream_si256((__m256i*) Row, XMMB);
+        }
+
+        {
+            __m256 XMM0 = _mm256_add_ps(XMM3, _mm256_load_ps(&Y[Idx+64]));
+
+            __m256 XMM8 = _mm256_fmadd_ps(XMM1, XMM4, XMM0);
+            __m256 XMM9 = _mm256_fmadd_ps(XMM2, XMM6, _mm256_fmadd_ps(XMM1, XMM5, XMM0));
+            __m256 XMMA = _mm256_fmadd_ps(XMM2, XMM7, XMM0);
+
+            __m256i XMMB = _mm256_cvtps_epi32(XMM8); // BBBBBBBB
+            __m256i XMMC = _mm256_cvtps_epi32(XMM9); // GGGGGGGG
+            __m256i XMMD = _mm256_cvtps_epi32(XMMA); // RRRRRRRR
+            __m256i XMME = _mm256_setzero_si256();   // AAAAAAAA
+
+            XMMB = _mm256_packus_epi32(XMMB, XMMC); // BBBBGGGGBBBBGGGG
+            XMMD = _mm256_packus_epi32(XMMD, XMME); // RRRRAAAARRRRAAAA
+
+            XMMB = _mm256_packus_epi16(XMMB, XMMD); // BBBBGGGGRRRRAAAABBBBGGGGRRRRAAAA
+
+            XMMB = _mm256_shuffle_epi8(XMMB, XMMF); // BGRABGRABGRABGRABGRABGRABGRABGRA
+
+            _mm256_stream_si256((__m256i*) (Row + 32), XMMB);
+        }
+
+        {
+            __m256 XMM0 = _mm256_add_ps(XMM3, _mm256_load_ps(&Y[Idx+128]));
+
+            __m256 XMM8 = _mm256_fmadd_ps(XMM1, XMM4, XMM0);
+            __m256 XMM9 = _mm256_fmadd_ps(XMM2, XMM6, _mm256_fmadd_ps(XMM1, XMM5, XMM0));
+            __m256 XMMA = _mm256_fmadd_ps(XMM2, XMM7, XMM0);
+
+            __m256i XMMB = _mm256_cvtps_epi32(XMM8); // BBBBBBBB
+            __m256i XMMC = _mm256_cvtps_epi32(XMM9); // GGGGGGGG
+            __m256i XMMD = _mm256_cvtps_epi32(XMMA); // RRRRRRRR
+            __m256i XMME = _mm256_setzero_si256();   // AAAAAAAA
+
+            XMMB = _mm256_packus_epi32(XMMB, XMMC); // BBBBGGGGBBBBGGGG
+            XMMD = _mm256_packus_epi32(XMMD, XMME); // RRRRAAAARRRRAAAA
+
+            XMMB = _mm256_packus_epi16(XMMB, XMMD); // BBBBGGGGRRRRAAAABBBBGGGGRRRRAAAA
+
+            XMMB = _mm256_shuffle_epi8(XMMB, XMMF); // BGRABGRABGRABGRABGRABGRABGRABGRA
+
+            _mm256_stream_si256((__m256i*) (Row + 8*Pitch), XMMB);
+        }
+
+        {
+            __m256 XMM0 = _mm256_add_ps(XMM3, _mm256_load_ps(&Y[Idx+192]));
+
+            __m256 XMM8 = _mm256_fmadd_ps(XMM1, XMM4, XMM0);
+            __m256 XMM9 = _mm256_fmadd_ps(XMM2, XMM6, _mm256_fmadd_ps(XMM1, XMM5, XMM0));
+            __m256 XMMA = _mm256_fmadd_ps(XMM2, XMM7, XMM0);
+
+            __m256i XMMB = _mm256_cvtps_epi32(XMM8); // BBBBBBBB
+            __m256i XMMC = _mm256_cvtps_epi32(XMM9); // GGGGGGGG
+            __m256i XMMD = _mm256_cvtps_epi32(XMMA); // RRRRRRRR
+            __m256i XMME = _mm256_setzero_si256();   // AAAAAAAA
+
+            XMMB = _mm256_packus_epi32(XMMB, XMMC); // BBBBGGGGBBBBGGGG
+            XMMD = _mm256_packus_epi32(XMMD, XMME); // RRRRAAAARRRRAAAA
+
+            XMMB = _mm256_packus_epi16(XMMB, XMMD); // BBBBGGGGRRRRAAAABBBBGGGGRRRRAAAA
+
+            XMMB = _mm256_shuffle_epi8(XMMB, XMMF); // BGRABGRABGRABGRABGRABGRABGRABGRA
+
+            _mm256_stream_si256((__m256i*) (Row + 8*Pitch + 32), XMMB);
+        }
+
+
+        Row += Pitch;
+    }
+}
+
+#if 1
 static void YCbCr_to_BGRA_420_8x8(u8* Data, usz Pitch, f32 Y[2][2][8][8], f32 Cb[8][8], f32 Cr[8][8])
 {
-    YCbCr_to_BGRA_8x8(Data,                 Pitch, &Y[0][0][0][0], &Cb[0][0], &Cr[0][0]);
-    YCbCr_to_BGRA_8x8(Data + 8*4,           Pitch, &Y[0][1][0][0], &Cb[0][0], &Cr[0][0]);
-    YCbCr_to_BGRA_8x8(Data + 8*Pitch,       Pitch, &Y[1][0][0][0], &Cb[0][0], &Cr[0][0]);
-    YCbCr_to_BGRA_8x8(Data + 8*Pitch + 8*4, Pitch, &Y[1][1][0][0], &Cb[0][0], &Cr[0][0]);
+    YCbCr_to_BGRA_8x8_sse(Data,                 Pitch, &Y[0][0][0][0], &Cb[0][0], &Cr[0][0]);
+    YCbCr_to_BGRA_8x8_sse(Data + 8*4,           Pitch, &Y[0][1][0][0], &Cb[0][0], &Cr[0][0]);
+    YCbCr_to_BGRA_8x8_sse(Data + 8*Pitch,       Pitch, &Y[1][0][0][0], &Cb[0][0], &Cr[0][0]);
+    YCbCr_to_BGRA_8x8_sse(Data + 8*Pitch + 8*4, Pitch, &Y[1][1][0][0], &Cb[0][0], &Cr[0][0]);
 }
+#else
+static void YCbCr_to_BGRA_420_8x8(u8* Data, usz Pitch, f32 Y[2][2][8][8], f32 Cb[8][8], f32 Cr[8][8])
+{
+    YCbCr_to_BGRA_8x8_avx(Data, Pitch, &Y[0][0][0][0], &Cb[0][0], &Cr[0][0]);
+}
+#endif
+
+#pragma optimize("", off)
 
 typedef struct
 {
@@ -721,10 +859,12 @@ static void TimingTick(const char* Description)
 {
     u64 Ticks = PlatformGetTicks();
     
-    Assert(TimingIdx < ArrayCount(TimingData));
-    timing* Timing = &TimingData[TimingIdx++];
-    Timing->Description = Description;
-    Timing->Ticks = Ticks;
+    if(TimingIdx < ArrayCount(TimingData))
+    {
+        timing* Timing = &TimingData[TimingIdx++];
+        Timing->Description = Description;
+        Timing->Ticks = Ticks;
+    }
 }
 
 static void TimingInit(const char* Description)
@@ -739,7 +879,7 @@ static void TimingFini(const char* Description)
     TimingTick(Description);
 
     printf("Timing report:\n");
-    Assert(TimingIdx < ArrayCount(TimingData));
+    Assert(TimingIdx <= ArrayCount(TimingData));
     Assert(TimingIdx > 1);
     usz LastIdx = TimingIdx-1;
     for(usz Idx = 0;
