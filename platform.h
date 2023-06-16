@@ -312,6 +312,7 @@ static void MatrixMul8x8T_generic(const f32 Left[8][8], const f32 RightT[8][8], 
     }
 }
 
+#if 1
 static void MatrixMul8x8T_sse(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
 {
     for(u8 Y = 0;
@@ -363,6 +364,82 @@ static void MatrixMul8x8T_sse(const f32 Left[8][8], const f32 RightT[8][8], f32 
         }
     }
 }
+#else
+static void MatrixMul8x8T_sse(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
+{
+    for(u8 Y = 0;
+        Y < 8;
+        Y += 2)
+    {
+        __m128 XMM0 = _mm_load_ps(&Left[Y][0]);
+        __m128 XMM1 = _mm_load_ps(&Left[Y][4]);
+        __m128 XMME = _mm_load_ps(&Left[Y+1][0]);
+        __m128 XMMF = _mm_load_ps(&Left[Y+1][4]);
+
+        for(u8 X = 0;
+            X < 8;
+            X += 4)
+        {
+            __m128 XMM2 = _mm_load_ps(&RightT[X+0][0]);
+            __m128 XMM3 = _mm_load_ps(&RightT[X+0][4]);
+            __m128 XMM4 = _mm_load_ps(&RightT[X+1][0]);
+            __m128 XMM5 = _mm_load_ps(&RightT[X+1][4]);
+            __m128 XMM6 = _mm_load_ps(&RightT[X+2][0]);
+            __m128 XMM7 = _mm_load_ps(&RightT[X+2][4]);
+            __m128 XMM8 = _mm_load_ps(&RightT[X+3][0]);
+            __m128 XMM9 = _mm_load_ps(&RightT[X+3][4]);
+
+            {
+                __m128 XMMA = _mm_mul_ps(XMM0, XMM2);
+                __m128 XMMB = _mm_mul_ps(XMM1, XMM3);
+                XMMA = _mm_hadd_ps(XMMA, XMMB);
+
+                XMMB = _mm_mul_ps(XMM0, XMM4);
+                __m128 XMMC = _mm_mul_ps(XMM1, XMM5);
+                XMMB = _mm_hadd_ps(XMMB, XMMC);
+                XMMA = _mm_hadd_ps(XMMA, XMMB);
+
+                XMMB = _mm_mul_ps(XMM0, XMM6);
+                XMMC = _mm_mul_ps(XMM1, XMM7);
+                XMMB = _mm_hadd_ps(XMMB, XMMC);
+
+                XMMC = _mm_mul_ps(XMM0, XMM8);
+                __m128 XMMD = _mm_mul_ps(XMM1, XMM9);
+                XMMC = _mm_hadd_ps(XMMC, XMMD);
+                XMMB = _mm_hadd_ps(XMMB, XMMC);
+
+                XMMA = _mm_hadd_ps(XMMA, XMMB);
+
+                _mm_store_ps(&Output[Y][X], XMMA);
+            }
+
+            {
+                __m128 XMMA = _mm_mul_ps(XMME, XMM2);
+                __m128 XMMB = _mm_mul_ps(XMMF, XMM3);
+                XMMA = _mm_hadd_ps(XMMA, XMMB);
+
+                XMMB = _mm_mul_ps(XMME, XMM4);
+                __m128 XMMC = _mm_mul_ps(XMMF, XMM5);
+                XMMB = _mm_hadd_ps(XMMB, XMMC);
+                XMMA = _mm_hadd_ps(XMMA, XMMB);
+
+                XMMB = _mm_mul_ps(XMME, XMM6);
+                XMMC = _mm_mul_ps(XMMF, XMM7);
+                XMMB = _mm_hadd_ps(XMMB, XMMC);
+
+                XMMC = _mm_mul_ps(XMME, XMM8);
+                __m128 XMMD = _mm_mul_ps(XMMF, XMM9);
+                XMMC = _mm_hadd_ps(XMMC, XMMD);
+                XMMB = _mm_hadd_ps(XMMB, XMMC);
+
+                XMMA = _mm_hadd_ps(XMMA, XMMB);
+
+                _mm_store_ps(&Output[Y+1][X], XMMA);
+            }
+        }
+    }
+}
+#endif
 
 static void MatrixMul8x8T_avx(const f32 Left[8][8], const f32 RightT[8][8], f32 Output[8][8])
 {
