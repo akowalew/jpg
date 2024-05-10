@@ -38,7 +38,7 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
-    TIMING_TICK("Encoding JPEG");
+    TIMING_TICK("Encoding JPG");
 
 #if 0
     PlatformShowBitmap(&Bitmap, "BMP");
@@ -51,10 +51,10 @@ int main(int Argc, char** Argv)
     }
 
     usz OutputSize;
-    void* OutputData = EncodeJPEG(&Bitmap, &OutputSize, Quality);
+    void* OutputData = EncodeJPG(&Bitmap, &OutputSize, Quality);
     if(!OutputData)
     {
-        fprintf(stderr, "Failed to encode JPEG\n");
+        fprintf(stderr, "Failed to encode JPG\n");
         return EXIT_FAILURE;
     }
 
@@ -69,9 +69,9 @@ int main(int Argc, char** Argv)
     TIMING_FINI("Done");
 
 #if 1
-    bitmap JPEG = {0};
-    Assert(DecodeJPEG(OutputData, OutputSize, &JPEG));
-    PlatformShowBitmap(&JPEG, "JPEG");
+    bitmap JPG = {0};
+    Assert(DecodeJPG(OutputData, OutputSize, &JPG));
+    PlatformShowBitmap(&JPG, "JPG");
 #endif
 
     return EXIT_SUCCESS;

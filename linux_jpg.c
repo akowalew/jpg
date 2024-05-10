@@ -61,9 +61,9 @@ int main(int Argc, char** Argv)
     }
 
     bitmap Bitmap;
-    if(!ParseJPEG(FileData, FileSize, &Bitmap))
+    if(!ParseJPG(FileData, FileSize, &Bitmap))
     {
-        fprintf(stderr, "Failed to parse JPEG\n");
+        fprintf(stderr, "Failed to parse JPG\n");
         return EXIT_FAILURE;
     }
 

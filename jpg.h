@@ -1,13 +1,13 @@
-#define JPEG_SOI  0xD8FF
-#define JPEG_APP0 0xE0FF
-#define JPEG_APP1 0xE1FF
-#define JPEG_COM  0xFEFF
-#define JPEG_DQT  0xDBFF
-#define JPEG_SOF0 0xC0FF
-#define JPEG_SOF2 0xC2FF
-#define JPEG_DHT  0xC4FF
-#define JPEG_SOS  0xDAFF
-#define JPEG_EOI  0xD9FF
+#define JPG_SOI  0xD8FF
+#define JPG_APP0 0xE0FF
+#define JPG_APP1 0xE1FF
+#define JPG_COM  0xFEFF
+#define JPG_DQT  0xDBFF
+#define JPG_SOF0 0xC0FF
+#define JPG_SOF2 0xC2FF
+#define JPG_DHT  0xC4FF
+#define JPG_SOS  0xDAFF
+#define JPG_EOI  0xD9FF
 
 // Marker: 0xE0FF Length: 16
 // Marker: 0xE1FF Length: 34
@@ -41,10 +41,10 @@
 // Marker: 0xDAFF Length: 0x0008
 // Marker: 0xA6FA Length: 0x0000
 
-#define JPEG_COMPONENT_Y 1
-#define JPEG_COMPONENT_Cb 2
-#define JPEG_COMPONENT_Cr 3
-#define JPEG_COMPONENT_Additional 4
+#define JPG_COMPONENT_Y 1
+#define JPG_COMPONENT_Cb 2
+#define JPG_COMPONENT_Cr 3
+#define JPG_COMPONENT_Additional 4
 
 #pragma pack(push, 1)
 typedef struct
@@ -84,8 +84,8 @@ typedef struct
 } jpg_sof0;
 #pragma pack(pop)
 
-#define JPEG_DHT_CLASS_DC 0
-#define JPEG_DHT_CLASS_AC 1
+#define JPG_DHT_CLASS_DC 0
+#define JPG_DHT_CLASS_AC 1
 
 #pragma pack(push, 1)
 typedef struct
@@ -135,7 +135,7 @@ typedef struct
 } jpg_soi;
 #pragma pack(pop)
 
-static int   DecodeJPEG(void* Data, usz Size, bitmap* Bitmap);
-static int   DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap);
-static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality);
-static int   EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality);
+static int   DecodeJPG(void* Data, usz Size, bitmap* Bitmap);
+static int   DecodeJPGfromBuffer(buffer* Buffer, bitmap* Bitmap);
+static void* EncodeJPG(bitmap* Bitmap, usz* Size, u8 Quality);
+static int   EncodeJPGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality);

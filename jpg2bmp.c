@@ -29,12 +29,12 @@ int main(int Argc, char** Argv)
         return EXIT_FAILURE;
     }
 
-    TIMING_TICK("Decoding JPEG");
+    TIMING_TICK("Decoding JPG");
 
     bitmap Bitmap;
-    if(!DecodeJPEG(InputData, InputSize, &Bitmap))
+    if(!DecodeJPG(InputData, InputSize, &Bitmap))
     {
-        fprintf(stderr, "Failed to decode JPEG\n");
+        fprintf(stderr, "Failed to decode JPG\n");
         return EXIT_FAILURE;
     }
 

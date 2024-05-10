@@ -691,7 +691,7 @@ static int DecodeImage(bit_stream* BitStream, bitmap* Bitmap,
     return 1;
 }
 
-static const u8 JPEG_STD_Y_Q50_2D[64] = 
+static const u8 JPG_STD_Y_Q50_2D[64] =
 {
     // Coefficients (2D order)
     16,  11,  10,  16,  24,  40,  51,  61,
@@ -704,7 +704,7 @@ static const u8 JPEG_STD_Y_Q50_2D[64] =
     72,  92,  95,  98, 112, 100, 103,  99,
 };
 
-static const u8 JPEG_STD_Y_Q50_ZZ[64] = 
+static const u8 JPG_STD_Y_Q50_ZZ[64] =
 {
     // Coefficients (Zig-Zag order)
      16,  11,  12,  14,  12,  10,  16,  14,
@@ -717,7 +717,7 @@ static const u8 JPEG_STD_Y_Q50_ZZ[64] =
     121, 112, 100, 120,  92, 101, 103,  99,
 };
 
-static const u8 JPEG_STD_Chroma_Q50_2D[64] =
+static const u8 JPG_STD_Chroma_Q50_2D[64] =
 {
     // Coefficients (2D order)
     17,  18,  24,  47,  99,  99,  99,  99,
@@ -730,7 +730,7 @@ static const u8 JPEG_STD_Chroma_Q50_2D[64] =
     99,  99,  99,  99,  99,  99,  99,  99,
 };
 
-static const u8 JPEG_STD_Chroma_Q50_ZZ[64] =
+static const u8 JPG_STD_Chroma_Q50_ZZ[64] =
 {
     // Coefficients (Zig-Zag order)
      17,  18,  18,  24,  21,  24,  47,  26,
@@ -743,7 +743,7 @@ static const u8 JPEG_STD_Chroma_Q50_ZZ[64] =
      99,  99,  99,  99,  99,  99,  99,  99,
 };
 
-static const u8 JPEG_STD_DHT00[] =
+static const u8 JPG_STD_DHT00[] =
 {
     // Id:
     0x00, 
@@ -755,7 +755,7 @@ static const u8 JPEG_STD_DHT00[] =
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
 };
 
-static const u8 JPEG_STD_DHT01[] = 
+static const u8 JPG_STD_DHT01[] =
 {
     // Id:
     0x10,
@@ -777,7 +777,7 @@ static const u8 JPEG_STD_DHT01[] =
     0xF9, 0xFA,
 };
 
-static const u8 JPEG_STD_DHT10[] = 
+static const u8 JPG_STD_DHT10[] =
 {
     // Id:
     0x01,
@@ -789,7 +789,7 @@ static const u8 JPEG_STD_DHT10[] =
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
 };
 
-static const u8 JPEG_STD_DHT11[] =
+static const u8 JPG_STD_DHT11[] =
 {
     // Id:
     0x11,
@@ -832,7 +832,7 @@ static void GenerateJumpTableForHT(const u8* DHT, u32* JumpTable)
     }
 }
 
-static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
+static void* EncodeJPG(bitmap* Bitmap, usz* Size, u8 Quality)
 {
     usz BufferSize = Bitmap->Size*16; // TODO: Dynamical approach, eeeh?
     u8* BufferStart = PlatformAlloc(BufferSize);
@@ -844,7 +844,7 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
     buffer Buffer;
     Buffer.Elapsed = BufferSize;
     Buffer.At = BufferStart;
-    if(!EncodeJPEGintoBuffer(&Buffer, Bitmap, Quality))
+    if(!EncodeJPGintoBuffer(&Buffer, Bitmap, Quality))
     {
         PlatformFree(Buffer.At);
         return 0;
@@ -855,7 +855,7 @@ static void* EncodeJPEG(bitmap* Bitmap, usz* Size, u8 Quality)
     return BufferStart;
 }
 
-static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
+static int EncodeJPGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
 {
     u8 SX = 2;
     u8 SY = 2;
@@ -867,11 +867,11 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     Assert(Bitmap->Width < 65536);
     Assert(Bitmap->Height < 65536);
 
-    Assert(PushU16(Buffer, JPEG_SOI));
+    Assert(PushU16(Buffer, JPG_SOI));
 
     jpg_app0* APP0;
 
-    Assert(APP0 = PushSegment(Buffer, JPEG_APP0, jpg_app0));
+    Assert(APP0 = PushSegment(Buffer, JPG_APP0, jpg_app0));
     APP0->JFIF[0] = 'J';
     APP0->JFIF[1] = 'F';
     APP0->JFIF[2] = 'I';
@@ -889,23 +889,23 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
 
     jpg_dqt* DQT[2];
 
-    Assert(DQT[0] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpg_dqt)));
+    Assert(DQT[0] = PushSegmentCount(Buffer, JPG_DQT, sizeof(jpg_dqt)));
     DQT[0]->Id = 0;
     for(u8 Idx = 0;
         Idx < 64;
         Idx++)
     {
-        float Coeff = JPEG_STD_Y_Q50_ZZ[Idx] * Ratio;
+        float Coeff = JPG_STD_Y_Q50_ZZ[Idx] * Ratio;
         DQT[0]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
     }
 
-    Assert(DQT[1] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpg_dqt)));
+    Assert(DQT[1] = PushSegmentCount(Buffer, JPG_DQT, sizeof(jpg_dqt)));
     DQT[1]->Id = 1;
     for(u8 Idx = 0;
         Idx < 64;
         Idx++)
     {
-        float Coeff = JPEG_STD_Chroma_Q50_ZZ[Idx] * Ratio;
+        float Coeff = JPG_STD_Chroma_Q50_ZZ[Idx] * Ratio;
         DQT[1]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
     }
 
@@ -927,7 +927,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
 
     jpg_sof0* SOF0;
 
-    Assert(SOF0 = PushSegment(Buffer, JPEG_SOF0, jpg_sof0));
+    Assert(SOF0 = PushSegment(Buffer, JPG_SOF0, jpg_sof0));
     SOF0->BitsPerSample = 8;
     SOF0->ImageHeight = ByteSwap16(Bitmap->Height);
     SOF0->ImageWidth = ByteSwap16(Bitmap->Width);
@@ -947,31 +947,31 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
 
     jpg_dht* DHT[2][2];
 
-    Assert(DHT[0][0] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT00)));
-    memcpy(DHT[0][0], JPEG_STD_DHT00, sizeof(JPEG_STD_DHT00));
+    Assert(DHT[0][0] = PushSegmentCount(Buffer, JPG_DHT, sizeof(JPG_STD_DHT00)));
+    memcpy(DHT[0][0], JPG_STD_DHT00, sizeof(JPG_STD_DHT00));
 
-    Assert(DHT[0][1] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT01)));
-    memcpy(DHT[0][1], JPEG_STD_DHT01, sizeof(JPEG_STD_DHT01));
+    Assert(DHT[0][1] = PushSegmentCount(Buffer, JPG_DHT, sizeof(JPG_STD_DHT01)));
+    memcpy(DHT[0][1], JPG_STD_DHT01, sizeof(JPG_STD_DHT01));
 
-    Assert(DHT[1][0] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT10)));
-    memcpy(DHT[1][0], JPEG_STD_DHT10, sizeof(JPEG_STD_DHT10));
+    Assert(DHT[1][0] = PushSegmentCount(Buffer, JPG_DHT, sizeof(JPG_STD_DHT10)));
+    memcpy(DHT[1][0], JPG_STD_DHT10, sizeof(JPG_STD_DHT10));
 
-    Assert(DHT[1][1] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT11)));
-    memcpy(DHT[1][1], JPEG_STD_DHT11, sizeof(JPEG_STD_DHT11));
+    Assert(DHT[1][1] = PushSegmentCount(Buffer, JPG_DHT, sizeof(JPG_STD_DHT11)));
+    memcpy(DHT[1][1], JPG_STD_DHT11, sizeof(JPG_STD_DHT11));
 
     u32 DHT00[256] = {0};
     u32 DHT01[256] = {0};
     u32 DHT10[256] = {0};
     u32 DHT11[256] = {0};
 
-    GenerateJumpTableForHT(&JPEG_STD_DHT00[1], DHT00);
-    GenerateJumpTableForHT(&JPEG_STD_DHT01[1], DHT01);
-    GenerateJumpTableForHT(&JPEG_STD_DHT10[1], DHT10);
-    GenerateJumpTableForHT(&JPEG_STD_DHT11[1], DHT11);
+    GenerateJumpTableForHT(&JPG_STD_DHT00[1], DHT00);
+    GenerateJumpTableForHT(&JPG_STD_DHT01[1], DHT01);
+    GenerateJumpTableForHT(&JPG_STD_DHT10[1], DHT10);
+    GenerateJumpTableForHT(&JPG_STD_DHT11[1], DHT11);
 
     jpg_sos* SOS;
 
-    Assert(SOS = PushSegment(Buffer, JPEG_SOS, jpg_sos));
+    Assert(SOS = PushSegment(Buffer, JPG_SOS, jpg_sos));
     SOS->NumComponents = 3;
     SOS->Components[0].ComponentId = 1;
     SOS->Components[0].IndexDC = 0;
@@ -1017,8 +1017,8 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
 
     Assert(DecodeImage(&BitStream, Bitmap, 
                     DQT[0]->Coefficients, DQT[1]->Coefficients,
-                    &JPEG_STD_DHT00[1], &JPEG_STD_DHT01[1],
-                    &JPEG_STD_DHT10[1], &JPEG_STD_DHT11[1],
+                    &JPG_STD_DHT00[1], &JPG_STD_DHT01[1],
+                    &JPG_STD_DHT10[1], &JPG_STD_DHT11[1],
                     SX, SY));
 
     BitStream = Orig;
@@ -1029,26 +1029,26 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     Buffer->At = BitStream.At;
     Buffer->Elapsed = BitStream.Elapsed;
 
-    Assert(PushU16(Buffer, JPEG_EOI));
+    Assert(PushU16(Buffer, JPG_EOI));
 
     return 1;
 }
 
-static int DecodeJPEG(void* Data, usz Size, bitmap* Bitmap)
+static int DecodeJPG(void* Data, usz Size, bitmap* Bitmap)
 {
     buffer Buffer;
     Buffer.At = Data;
     Buffer.Elapsed = Size;
-    return DecodeJPEGfromBuffer(&Buffer, Bitmap);
+    return DecodeJPGfromBuffer(&Buffer, Bitmap);
 }
 
-static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
+static int DecodeJPGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 {
     u16* MarkerAt = PopU16(Buffer);
     Assert(MarkerAt);
 
     u16 Marker = *MarkerAt;
-    Assert(Marker == JPEG_SOI);
+    Assert(Marker == JPG_SOI);
 
     jpg_app0* APP0 = 0;
     jpg_dqt* DQT = 0;
@@ -1068,9 +1068,9 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
 
         // printf("Marker: 0x%04X", Marker);
 
-        if(Marker == JPEG_EOI)
+        if(Marker == JPG_EOI)
         {
-            // NOTE: JPEG can also end prematurely, and without even a picture!
+            // NOTE: JPG can also end prematurely, and without even a picture!
             // NOTE#2: Looks like Windows can add additional bytes at the end of file,
             // so don't assume that after EOI there will be 0 bytes elapsed!!!
             break;
@@ -1090,14 +1090,14 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
         switch(Marker)
         {
 #if 1
-            case JPEG_APP0:
+            case JPG_APP0:
             {
                 Assert(Length == sizeof(*APP0));
                 APP0 = Payload;
             } break;
 #endif
 
-            case JPEG_DQT:
+            case JPG_DQT:
             {
                 Assert(Length == sizeof(*DQT));
                 DQT = Payload;
@@ -1119,7 +1119,7 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 }
             } break;
 
-            case JPEG_SOF0:
+            case JPG_SOF0:
             {
                 Assert(Length == sizeof(*SOF0));
                 SOF0 = Payload;
@@ -1130,12 +1130,12 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 Assert(SOF0->NumComponents == 3);
             } break;
 
-            case JPEG_SOF2:
+            case JPG_SOF2:
             {
-                Assert(!"Progressive JPEG not supported");
+                Assert(!"Progressive JPG not supported");
             } break;
 
-            case JPEG_DHT:
+            case JPG_DHT:
             {
                 Assert(Length >= sizeof(*DHT));
                 DHT = Payload;
@@ -1150,7 +1150,7 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 DHTs[DHT->TableId][DHT->TableClass] = DHT;
             } break;
 
-            case JPEG_SOS:
+            case JPG_SOS:
             {
                 Assert(Length == sizeof(*SOS));
                 SOS = Payload;
@@ -1199,11 +1199,11 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
                 Bitmap->Height = SOF0->ImageHeight;
 
 #if 0
-                PlatformShowBitmap(Bitmap, "Decoded JPEG");
+                PlatformShowBitmap(Bitmap, "Decoded JPG");
 #endif
 
                 Assert(BitStream.Elapsed >= 2);
-                Assert(*(u16*)(BitStream.At) == JPEG_EOI);
+                Assert(*(u16*)(BitStream.At) == JPG_EOI);
                 return 1;
             } break;
         }
