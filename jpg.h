@@ -57,7 +57,7 @@ typedef struct
     u16 VerticalDensity; // Vertical pixel density
     u8 ThumbnailWidth; // Thumbnail image width
     u8 ThumbnailHeight; // Thumbnail image height
-} jpeg_app0;
+} jpg_app0;
 #pragma pack(pop)
 
 #pragma pack(push, 1)
@@ -65,7 +65,7 @@ typedef struct
 {
     u8 Id;
     u8 Coefficients[64];
-} jpeg_dqt;
+} jpg_dqt;
 #pragma pack(pop)
 
 #pragma pack(push, 1)
@@ -81,7 +81,7 @@ typedef struct
         u8 HorizontalSubsamplingFactor : 4;
         u8 QuantizationTableId; // Quantization table identifier for this component
     } Components[3]; // Up to 3 components (Y, Cb, Cr)
-} jpeg_sof0;
+} jpg_sof0;
 #pragma pack(pop)
 
 #define JPEG_DHT_CLASS_DC 0
@@ -101,7 +101,7 @@ typedef struct
     };
     u8 Counts[16]; // Number of Huffman codes for each code length
     u8 Values[];
-} jpeg_dht;
+} jpg_dht;
 #pragma pack(pop)
 
 #pragma pack(push, 1)
@@ -125,14 +125,14 @@ typedef struct
     u8 EndOfSelection; // Spectral selection end (0-63)
     u8 ApproximationBitLow : 4; // Approximation bit position high and low nibbles
     u8 ApproximationBitHigh : 4; // Approximation bit position high and low nibbles
-} jpeg_sos;
+} jpg_sos;
 #pragma pack(pop)
 
 #pragma pack(push, 1)
 typedef struct
 {
     u16 Marker;
-} jpeg_soi;
+} jpg_soi;
 #pragma pack(pop)
 
 static int   DecodeJPEG(void* Data, usz Size, bitmap* Bitmap);

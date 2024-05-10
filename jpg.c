@@ -869,9 +869,9 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
 
     Assert(PushU16(Buffer, JPEG_SOI));
 
-    jpeg_app0* APP0;
+    jpg_app0* APP0;
 
-    Assert(APP0 = PushSegment(Buffer, JPEG_APP0, jpeg_app0));
+    Assert(APP0 = PushSegment(Buffer, JPEG_APP0, jpg_app0));
     APP0->JFIF[0] = 'J';
     APP0->JFIF[1] = 'F';
     APP0->JFIF[2] = 'I';
@@ -887,9 +887,9 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
 
     u8* ZZ = (u8*) &ZigZagTable[0][0];
 
-    jpeg_dqt* DQT[2];
+    jpg_dqt* DQT[2];
 
-    Assert(DQT[0] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
+    Assert(DQT[0] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpg_dqt)));
     DQT[0]->Id = 0;
     for(u8 Idx = 0;
         Idx < 64;
@@ -899,7 +899,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
         DQT[0]->Coefficients[Idx] = (u8) CLAMP(Coeff, 1, 255);
     }
 
-    Assert(DQT[1] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpeg_dqt)));
+    Assert(DQT[1] = PushSegmentCount(Buffer, JPEG_DQT, sizeof(jpg_dqt)));
     DQT[1]->Id = 1;
     for(u8 Idx = 0;
         Idx < 64;
@@ -925,9 +925,9 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
         DQT_Chroma[Idx] = DQT[1]->Coefficients[ZZ[Idx]];
     }
 
-    jpeg_sof0* SOF0;
+    jpg_sof0* SOF0;
 
-    Assert(SOF0 = PushSegment(Buffer, JPEG_SOF0, jpeg_sof0));
+    Assert(SOF0 = PushSegment(Buffer, JPEG_SOF0, jpg_sof0));
     SOF0->BitsPerSample = 8;
     SOF0->ImageHeight = ByteSwap16(Bitmap->Height);
     SOF0->ImageWidth = ByteSwap16(Bitmap->Width);
@@ -945,7 +945,7 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     SOF0->Components[2].HorizontalSubsamplingFactor = 1;
     SOF0->Components[2].QuantizationTableId = 1;
 
-    jpeg_dht* DHT[2][2];
+    jpg_dht* DHT[2][2];
 
     Assert(DHT[0][0] = PushSegmentCount(Buffer, JPEG_DHT, sizeof(JPEG_STD_DHT00)));
     memcpy(DHT[0][0], JPEG_STD_DHT00, sizeof(JPEG_STD_DHT00));
@@ -969,9 +969,9 @@ static int EncodeJPEGintoBuffer(buffer* Buffer, bitmap* Bitmap, u8 Quality)
     GenerateJumpTableForHT(&JPEG_STD_DHT10[1], DHT10);
     GenerateJumpTableForHT(&JPEG_STD_DHT11[1], DHT11);
 
-    jpeg_sos* SOS;
+    jpg_sos* SOS;
 
-    Assert(SOS = PushSegment(Buffer, JPEG_SOS, jpeg_sos));
+    Assert(SOS = PushSegment(Buffer, JPEG_SOS, jpg_sos));
     SOS->NumComponents = 3;
     SOS->Components[0].ComponentId = 1;
     SOS->Components[0].IndexDC = 0;
@@ -1050,14 +1050,14 @@ static int DecodeJPEGfromBuffer(buffer* Buffer, bitmap* Bitmap)
     u16 Marker = *MarkerAt;
     Assert(Marker == JPEG_SOI);
 
-    jpeg_app0* APP0 = 0;
-    jpeg_dqt* DQT = 0;
-    jpeg_sof0* SOF0 = 0;
-    jpeg_dht* DHT = 0;
-    jpeg_sos* SOS = 0;
+    jpg_app0* APP0 = 0;
+    jpg_dqt* DQT = 0;
+    jpg_sof0* SOF0 = 0;
+    jpg_dht* DHT = 0;
+    jpg_sos* SOS = 0;
 
     f32 DQTs[2][64] = {0};
-    jpeg_dht* DHTs[2][2] = {0};
+    jpg_dht* DHTs[2][2] = {0};
 
     while(Buffer->Elapsed)
     {

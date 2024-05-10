@@ -6,8 +6,8 @@
 #include <sys/mman.h>
 
 #include "platform.h"
-#include "jpeg.h"
-#include "jpeg.c"
+#include "jpg.h"
+#include "jpg.c"
 
 static void* PlatformReadEntireFile(const char* Name, usz* Size)
 {
