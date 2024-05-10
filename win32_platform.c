@@ -150,12 +150,23 @@ int PlatformShowBitmap(bitmap* Bitmap, const char* Title)
         ClassRegistered = 1;
     }
 
-    HWND Window = CreateWindowEx(0,
+    DWORD Style = WS_OVERLAPPEDWINDOW | WS_VISIBLE;
+    DWORD ExStyle = WS_EX_OVERLAPPEDWINDOW;
+    RECT WindowRect;
+    WindowRect.left = 0;
+    WindowRect.right = Bitmap->Width;
+    WindowRect.top = 0;
+    WindowRect.bottom = Bitmap->Height;
+    AdjustWindowRectEx(&WindowRect, Style, 0, ExStyle);
+    int WindowWidth = WindowRect.right - WindowRect.left;
+    int WindowHeight = WindowRect.bottom - WindowRect.top;
+
+    HWND Window = CreateWindowEx(ExStyle,
                                  ClassName,
                                  Title,
-                                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                                 Style,
                                  CW_USEDEFAULT, CW_USEDEFAULT,
-                                 CW_USEDEFAULT, CW_USEDEFAULT,
+                                 WindowWidth, WindowHeight,
                                  0, 0, ModuleHandle, 0);
     Assert(Window);
 

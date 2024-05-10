@@ -59,7 +59,7 @@ int main(int Argc, char** Argv)
     TIMING_FINI("Done");
 
 #if 1
-    PlatformShowBitmap(&Bitmap, "Bitmap");
+    PlatformShowBitmap(&Bitmap, InputFile);
 #endif
 
     return EXIT_SUCCESS;
